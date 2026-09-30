@@ -1,0 +1,3 @@
+[submodule "overcooked-v2/JaxMARL"]
+	path = overcooked-v2/JaxMARL
+	url = https://github.com/bold-lab-ai/JaxMARL.git

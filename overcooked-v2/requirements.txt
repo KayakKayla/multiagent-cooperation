@@ -1,0 +1,11 @@
+# Compatible CUDA 12 stack for the existing RTX 3070 driver.
+# JaxMARL source is pinned separately in UPSTREAM_REVISION.
+jax[cuda12]==0.4.38
+flax==0.10.2
+optax==0.2.4
+chex==0.1.88
+distrax==0.1.5
+orbax-checkpoint==0.10.3
+numpy==1.26.4
+setuptools==80.9.0
+-e ./JaxMARL[algs]

@@ -1,0 +1,5 @@
+outputs/
+__pycache__/
+.venv/
+.cache/
+install.log
