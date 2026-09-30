@@ -1,15 +1,69 @@
 # OvercookedV2 local setup
 
 Source: [JaxMARL](https://github.com/bold-lab-ai/JaxMARL), tracked as a pinned Git submodule. Its commit is also recorded in `UPSTREAM_REVISION`.
-The upstream simulator and PPO algorithm are unchanged. Our scripts provide repeatable local checks.
+The upstream simulator and PPO algorithm are unchanged. Our scripts provide repeatable local checks and a saved baseline training launcher.
 
 ## Current status (2026-09-30)
 
 - Installation completed; `pip check` passed. GPU simulator check completed 400 steps and produced `outputs/smoke/random-rollout.gif`.
 - The upstream recurrent PPO setup check passed on the GPU: 2 updates, 512 environment steps, and 16 optimizer steps. Saved weights were reloaded and verified with model inference; parameters, predictions, and metrics were finite.
 - The saved checkpoint is a setup artifact, too briefly trained to be a useful baseline. Research intervention and evaluation design remain undecided. Further experiments are user-led.
+- Coordination Ring paper-aligned single-seed training is prepared in `train.py` and `configs/coord_ring.yaml`; its dry-run and synthetic model initialization/save/reload checks have passed on the GPU. No baseline training has been launched.
 
-## Run from PowerShell
+## Coordination Ring baseline
+
+`configs/coord_ring.yaml` records the paper's partially observable original-layout
+experiment: Appendix C.1/C.2 and Appendix D.2.1, Table 4 of
+[the OvercookedV2 paper](https://arxiv.org/abs/2503.17821).
+This is **Coordination Ring (`coord_ring`)**, distinct from Grounded Coordination Ring
+(`grounded_coord_ring`). The algorithm and simulator remain pinned, unmodified upstream code.
+
+Environment:
+
+- Two chefs, local view radius 2 (5 x 5 cells; 30 numerical channels).
+- Random starting positions and directions; standard empty inventories/pots.
+- One possible recipe: three onions. No recipe indicator or recipe-reader role.
+- Negative delivery rewards enabled, as described in C.1. This single-recipe layout has no alternative wrong recipe.
+- 400-step episodes, automatic cooking once three ingredients are added, and the default numerical grid observation. These are pinned simulator defaults, explicitly recorded in our configuration.
+- No full starting-state augmentation, ingredient permutations, or added communication channel.
+
+Training:
+
+- Parameter-sharing recurrent IPPO in self-play; CNN + 128-unit GRU, matching C.1.1.
+- 10,000,000 requested environment steps; the upstream implementation completes 152 full updates / 9,961,472 steps.
+- 256 parallel kitchens, 256 steps per rollout, 64 minibatches, 4 optimization epochs.
+- Learning rate 0.0005, 5% warm-up followed by cosine decay; shaping bonuses fade to zero by 5,000,000 steps.
+- Remaining hyperparameters are explicit in the YAML. The per-minibatch size is 2,048 agent transitions, derived from two chefs per kitchen.
+- This launcher runs **one seed** (default 42); the paper's Figure 14 aggregates ten seeds. Our first run is not a ten-seed reproduction.
+
+From the repository root in PowerShell, first inspect the settings without playing or training:
+
+```powershell
+.\overcooked-v2\run.ps1 train -DryRun
+```
+
+To start the baseline yourself:
+
+```powershell
+.\overcooked-v2\run.ps1 train
+```
+
+Keep the terminal open. Compilation happens before update messages appear. The command
+prints its results directory and saves configuration, version/source metadata, and
+per-update progress under a new `outputs/train/coord_ring-seed42-<timestamp>/` directory.
+On successful completion it saves `params.msgpack`, numeric `metrics.npz`, and
+`summary.json`, and verifies that the checkpoint reloads. Existing results are not overwritten.
+
+The checkpoint is saved **only on completion**. Ctrl+C stops the run; partial progress
+logs remain, but interrupted runs cannot resume with this launcher. Runtime and full-budget
+GPU memory requirements have not yet been measured. Training statistics still need a
+separate frozen-policy evaluation before being reported as benchmark scores.
+
+To run another independent seed later, use `train -Seed 43`. Seeds are local run choices;
+the paper's exact seed sequence has not been reproduced. External logging is disabled.
+Linux equivalent: `bash overcooked-v2/run.sh train --seed 42`.
+
+## Run setup checks from PowerShell
 
 From the `multiagent-cooperation` repository root:
 
@@ -48,8 +102,8 @@ In Ubuntu, from this directory, run `bash setup.sh`. It initializes the JaxMARL 
 
 When pulling a change that updates the dependency, run `git submodule update --init` from the repository root. Do not update JaxMARL to its latest branch accidentally; changing the pinned revision is a separate project decision.
 
-## Starting scenario
+## Setup-check scenario
 
 `grounded_coord_simple` uses two agents, a view radius of 2, random starting positions, penalties for incorrect deliveries, and a newly sampled recipe after each correct delivery. These settings match the upstream baseline's environment configuration. The training check reduces its compute budget; it is not a paper reproduction.
 
-The next user-led step is to inspect this scenario. A longer baseline run and evaluation plan can follow once the user is ready.
+This remains the default scenario for setup checks. The user-led research baseline launch above uses Coordination Ring instead.

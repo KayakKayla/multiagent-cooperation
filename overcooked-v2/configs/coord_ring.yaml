@@ -1,0 +1,48 @@
+# OvercookedV2 paper: Appendix C.1/C.2 and D.2.1, Table 4.
+# https://arxiv.org/abs/2503.17821
+# One local seed; the paper aggregates ten independently trained seeds.
+ENV_NAME: overcooked_v2
+ENV_KWARGS:
+  layout: coord_ring
+  agent_view_size: 2
+  random_agent_positions: true
+  negative_rewards: true
+  # Remaining rules explicitly use the pinned simulator's defaults.
+  max_steps: 400
+  observation_type: default
+  random_reset: false
+  start_cooking_interaction: false
+  sample_recipe_on_delivery: false
+  indicate_successful_delivery: false
+
+LR: 0.0005
+ANNEAL_LR: true
+LR_WARMUP: 0.05
+NUM_ENVS: 256
+NUM_STEPS: 256
+NUM_MINIBATCHES: 64
+UPDATE_EPOCHS: 4
+TOTAL_TIMESTEPS: 10000000
+REW_SHAPING_HORIZON: 5000000
+
+# CNN channel counts are fixed in the upstream network, matching C.1.1.
+CNN_FEATURES: 32
+FC_DIM_SIZE: 128
+GRU_HIDDEN_DIM: 128
+ACTIVATION: relu
+CLIP_EPS: 0.2
+ENT_COEF: 0.01
+GAMMA: 0.99
+GAE_LAMBDA: 0.95
+SCALE_CLIP_EPS: false
+VF_COEF: 0.5
+MAX_GRAD_NORM: 0.25
+# Derived by upstream: 2 chefs x 256 kitchens x 256 steps / 64 minibatches.
+MINIBATCH_SIZE: 2048
+
+# Local launch/logging choices, separate from the published hyperparameters.
+SEED: 42
+NUM_SEEDS: 1
+ENTITY: ""
+PROJECT: se390-overcooked-v2
+WANDB_MODE: disabled
