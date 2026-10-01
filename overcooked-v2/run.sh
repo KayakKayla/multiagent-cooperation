@@ -34,6 +34,9 @@ case "$mode" in
     train)
         exec "$venv_path/bin/python" train.py "$@"
         ;;
+    evaluate)
+        exec "$venv_path/bin/python" evaluate.py "$@"
+        ;;
     *)
         echo "Unknown mode: $mode" >&2
         exit 2

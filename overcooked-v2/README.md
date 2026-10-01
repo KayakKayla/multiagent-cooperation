@@ -8,6 +8,7 @@ The upstream simulator and PPO algorithm are unchanged. Our scripts provide repe
 - Installation completed; `pip check` passed. GPU simulator check completed 400 steps and produced `outputs/smoke/random-rollout.gif`.
 - The upstream recurrent PPO setup check passed on the GPU: 2 updates, 512 environment steps, and 16 optimizer steps. Saved weights were reloaded and verified with model inference; parameters, predictions, and metrics were finite.
 - The saved checkpoint is a setup artifact, too briefly trained to be a useful baseline. Research intervention and evaluation design remain undecided. Further experiments are user-led.
+- Frozen-policy playback is verified on the GPU. The first seed-42 untrained reference completed five 400-step episodes (test seeds 1000-1004): zero deliveries and zero raw reward. Scores, initial weights, and an annotated GIF are in `outputs/evaluate/coord_ring-untrained-20261001T004631182874Z/`. No research training has been launched.
 - Coordination Ring paper-aligned single-seed training is prepared in `train.py` and `configs/coord_ring.yaml`; its dry-run and synthetic model initialization/save/reload checks have passed on the GPU. No baseline training has been launched.
 
 ## Coordination Ring baseline
@@ -56,12 +57,67 @@ On successful completion it saves `params.msgpack`, numeric `metrics.npz`, and
 
 The checkpoint is saved **only on completion**. Ctrl+C stops the run; partial progress
 logs remain, but interrupted runs cannot resume with this launcher. Runtime and full-budget
-GPU memory requirements have not yet been measured. Training statistics still need a
-separate frozen-policy evaluation before being reported as benchmark scores.
+GPU memory requirements have not yet been measured. Training statistics describe games played while the weights were changing. Use the
+separate frozen-policy evaluation below to measure the finished policy.
 
 To run another independent seed later, use `train -Seed 43`. Seeds are local run choices;
 the paper's exact seed sequence has not been reproduced. External logging is disabled.
 Linux equivalent: `bash overcooked-v2/run.sh train --seed 42`.
+
+## Before/after policy evaluation and GIFs
+
+Training and evaluation are separate commands. Evaluation freezes the policy's weights:
+it plays games and records results, without updating anything. Training saves only the
+final weights, not an optimizer/resume checkpoint, and does not automatically create a GIF.
+
+Before training, record the freshly initialized **neural policy** (not the random-action
+setup check):
+
+```powershell
+.\overcooked-v2\run.ps1 evaluate -Untrained
+```
+
+This plays five 400-step Coordination Ring episodes. Initialization seed 42 matches the
+baseline trainer's starting weights. Test seeds 1000-1004 are separate from the training
+seed. Both chefs share the policy but have separate recurrent memory, reset each episode.
+Actions are sampled from the policy's probabilities, as during training.
+
+After a training run finishes, evaluate its saved weights:
+
+```powershell
+.\overcooked-v2\run.ps1 evaluate -Run ".\overcooked-v2\outputs\train\<run-folder>"
+```
+
+Replace `<run-folder>` with the directory printed by training. This reads that run's
+`config.json` and `params.msgpack`, checks the pinned source revision, and uses the same
+five test seeds and action-sampling rule. Compare runs with matching environment settings.
+The same seeds align starting kitchens and random-number streams; the chefs' decisions
+and resulting trajectories will differ after learning.
+
+Each evaluation creates a new folder under `outputs/evaluate/` containing:
+
+- `episodes.csv`: raw team reward, correct/wrong deliveries, steps, and seed per episode.
+- `summary.json`: averages and total deliveries across the episodes.
+- `config.json` and `protocol.json`: environment/model settings, test seeds, policy hash,
+  source revision, and the recorded episode selection. An untrained evaluation also
+  saves its actual initial weights in `params.msgpack`.
+- `rollout.gif`, `initial.png`, and `final.png`: enlarged kitchen plus counters, chef
+  inventories/actions, numbered pots with fill/cooking status, and a graphics legend.
+
+The GIF always shows the **first** test episode, with one frame per two steps; its score
+is for that episode, not the five-episode average. The dashboard is for spectators and
+adds nothing to the policy's observations. Correct and wrong dishes are counted as
+separate delivery events, including simultaneous deliveries. The shared team reward is
+counted once and excludes training's shaping bonuses. On this layout a correct dish
+is worth 20 points; five episodes are a small before/after check, not a paper-scale benchmark.
+
+Optional controls: `evaluate -Untrained -Seed 43` selects another initialization;
+`-Episodes 10 -EvalSeed 1000` changes test count/seeds for either policy. Apply identical
+evaluation choices to both sides of a comparison. Keep the first five-episode results as
+the initial reference rather than choosing a particularly good or bad GIF later.
+Linux equivalents: `bash overcooked-v2/run.sh evaluate --untrained`, then
+`bash overcooked-v2/run.sh evaluate --run outputs/train/<run-folder>` (the latter path is
+relative to `overcooked-v2`, since `run.sh` sets that working directory).
 
 ## Run setup checks from PowerShell
 
