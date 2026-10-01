@@ -1,6 +1,6 @@
 # Agent context
 
-- Code: this repository; JaxMARL is a pinned submodule in overcooked-v2/JaxMARL. Keep upstream unchanged unless simulator edits are explicitly requested.
+- Code: this repository; JaxMARL is a pinned submodule in overcooked-v2/JaxMARL. Keep upstream unchanged unless simulator edits are explicitly requested. Favor simple wrappers with brief explanatory comments; preserve useful safeguards.
 - Local course documents: C:\Users\Rowan\Documents\School\SE\3B\SE390.
 - Project: Waterloo SE 390, team Sims (5 members); research on multi-agent cooperation using Overcooked-style environments. Study coordination failures and possible improvements to teammate modeling, task allocation, communication, or planning.
 - Evaluation interests: team reward, completion rate, coordination efficiency, unseen teammates, and unseen layouts. Specific intervention and experiment design remain undecided.

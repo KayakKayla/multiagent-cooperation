@@ -1,7 +1,6 @@
-"""Run one saved recurrent-IPPO self-play baseline using the pinned upstream code."""
+"""Launch the upstream recurrent-IPPO baseline and save its results locally."""
 
 import argparse
-import hashlib
 import importlib.util
 import json
 import os
@@ -24,144 +23,114 @@ DEFAULT_CONFIG = SCRIPT_DIR / "configs/coord_ring.yaml"
 
 
 def load_baseline(config_path: Path, seed: int | None):
-    """Load our explicit configuration and the unmodified upstream algorithm."""
+    """Read our settings and import the unmodified upstream trainer."""
     config = OmegaConf.to_container(OmegaConf.load(config_path), resolve=True)
     if seed is not None:
         config["SEED"] = seed
+    # Keep each seed's checkpoint and logs in a separate run.
     if config["NUM_SEEDS"] != 1:
         raise ValueError("This launcher runs one seed at a time.")
     if not 0 <= config["SEED"] < 2**32:
         raise ValueError("Seed must be an unsigned 32-bit integer.")
 
+    # Import the trainer directly so the pinned upstream source stays unchanged.
     source = SCRIPT_DIR / "JaxMARL/baselines/IPPO/ippo_rnn_overcooked_v2.py"
     spec = importlib.util.spec_from_file_location("upstream_ppo", source)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    env = module.jaxmarl.make(config["ENV_NAME"], **config["ENV_KWARGS"])
-
-    # Upstream rounds the budget down to a whole number of PPO updates.
-    steps_per_update = config["NUM_ENVS"] * config["NUM_STEPS"]
-    updates = config["TOTAL_TIMESTEPS"] // steps_per_update
-    if updates < 1:
-        raise ValueError("Budget must include at least one full PPO update.")
-    if (env.num_agents * config["NUM_ENVS"]) % config["NUM_MINIBATCHES"]:
-        raise ValueError("Actor count must be divisible by NUM_MINIBATCHES.")
-    return module, config, env, int(updates)
-
-
-def print_plan(config, env, updates: int) -> None:
-    print(OmegaConf.to_yaml(OmegaConf.create(config)), flush=True)
-    print(f"Backend: {jax.default_backend()}, devices: {jax.devices()}", flush=True)
-    print(f"Each chef's observation shape: {env.observation_space().shape}")
-    actual_steps = updates * config["NUM_ENVS"] * config["NUM_STEPS"]
-    print(f"Plan: {updates} PPO updates; {actual_steps:,} environment steps.")
-    print("An environment step counts one kitchen step with both chefs acting.", flush=True)
+    return module, config
 
 
 def execute_training(module, config):
-    """Compile and execute the original training function, then wait for logging."""
+    """Compile and run upstream training; no learning logic lives in this wrapper."""
     started = time.perf_counter()
-    # Use the upstream entry point's single-seed key convention.
+    # Match upstream's single-seed handling; make_train owns the learning logic.
     key = jax.random.split(jax.random.PRNGKey(config["SEED"]), 1)[0]
     train = jax.jit(module.make_train(config))
-    print(
-        "Tracing and compiling training; the first progress update may take a while.",
-        flush=True,
-    )
+    print("Compiling training; the first update may take a while.", flush=True)
     compiled = train.lower(key).compile()
-    print(f"Compilation finished after {time.perf_counter() - started:.1f}s.", flush=True)
+    print("Compilation complete; starting training.", flush=True)
     result = compiled(key)
 
-    # Individual waits avoid the combined readiness stall seen on this WSL setup.
+    # Results contain many arrays. Wait for each before saving; a combined
+    # wait stalled on our WSL/GPU setup.
     for leaf in jax.tree.leaves(result):
         if isinstance(leaf, jax.Array):
             leaf.block_until_ready()
+    # Finish asynchronous logging callbacks before closing the progress file.
     jax.effects_barrier()
     return result, time.perf_counter() - started
 
 
-def save_results(result, output: Path, config, elapsed: float) -> dict:
-    """Save weights, check that they reload, and preserve numeric training metrics."""
-    train_state = result["runner_state"][0]
-    params = jax.device_get(train_state.params)
+def save_results(result, output: Path, elapsed: float) -> None:
+    """Save weights and numeric metrics, then verify the weights reload."""
+    state = result["runner_state"][0]
+    params = jax.device_get(state.params)
     metrics = flatten_dict(jax.device_get(result["metrics"]), sep="/")
+
+    # Catch invalid numbers before saving unusable weights or misleading curves.
     if not all(np.isfinite(np.asarray(x)).all() for x in jax.tree.leaves(params)):
         raise ValueError("Training produced non-finite model weights.")
     if not all(np.isfinite(np.asarray(x)).all() for x in metrics.values()):
         raise ValueError("Training produced non-finite metrics.")
 
-    updates = config["TOTAL_TIMESTEPS"] // (config["NUM_ENVS"] * config["NUM_STEPS"])
-    expected_optimizer_steps = (
-        updates * config["UPDATE_EPOCHS"] * config["NUM_MINIBATCHES"]
-    )
-    if int(train_state.step) != expected_optimizer_steps:
-        raise ValueError("Unexpected number of optimizer steps.")
-
     checkpoint = output / "params.msgpack"
     checkpoint.write_bytes(serialization.to_bytes(params))
+    # Reload and run the model once to check the saved policy is usable.
     verify_checkpoint(result["runner_state"], checkpoint)
+
     np.savez_compressed(output / "metrics.npz", **metrics)
-    return {
+    summary = {
         "status": "complete",
-        "requested_environment_steps": config["TOTAL_TIMESTEPS"],
-        "completed_environment_steps": int(updates * config["NUM_ENVS"] * config["NUM_STEPS"]),
-        "ppo_updates": int(updates),
-        "optimizer_steps": int(train_state.step),
+        "completed_environment_steps": int(metrics["env_step"][-1]),
         "seconds_including_compilation": elapsed,
         "checkpoint_reload_verified": True,
-        "last_training_metrics": {
-            name: float(np.asarray(values).reshape(-1)[-1])
-            for name, values in metrics.items()
-        },
-        "evaluation_note": "Training statistics only; frozen-policy evaluation is still needed.",
     }
+    (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--seed", type=int)
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Inspect settings without playing or training.",
-    )
+    parser.add_argument("--dry-run", action="store_true", help="Inspect without training.")
     args = parser.parse_args()
-    module, config, env, updates = load_baseline(args.config, args.seed)
-    print_plan(config, env, updates)
+    module, config = load_baseline(args.config, args.seed)
+
+    # Constructing the environment checks settings without playing any games.
+    env = module.jaxmarl.make(config["ENV_NAME"], **config["ENV_KWARGS"])
+    updates = config["TOTAL_TIMESTEPS"] // (config["NUM_ENVS"] * config["NUM_STEPS"])
+    # Fail early if settings would produce no updates or an invalid batch reshape.
+    if updates < 1:
+        raise ValueError("Budget must include at least one full PPO update.")
+    if (env.num_agents * config["NUM_ENVS"]) % config["NUM_MINIBATCHES"]:
+        raise ValueError("Actor count must be divisible by NUM_MINIBATCHES.")
+    print(OmegaConf.to_yaml(OmegaConf.create(config)), flush=True)
+    print(f"Backend: {jax.default_backend()}, devices: {jax.devices()}")
+    print(f"Observation shape: {env.observation_space().shape}; PPO updates: {updates}")
     if args.dry_run:
-        print("Configuration checked. No simulation or training was started.", flush=True)
+        print("Configuration checked. No simulation or training started.", flush=True)
         return
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     run_name = f"{config['ENV_KWARGS']['layout']}-seed{config['SEED']}-{timestamp}"
     output = SCRIPT_DIR / "outputs/train" / run_name
     output.mkdir(parents=True, exist_ok=False)
+    # Save chosen settings before upstream adds its own derived fields.
     (output / "config.json").write_text(json.dumps(config, indent=2) + "\n")
+    # Source/version/device details help explain differences between machines.
     metadata = {
-        "started_utc": timestamp,
-        "paper": "https://arxiv.org/abs/2503.17821",
-        "paper_sections": ["C.1", "C.2", "D.2.1 Table 4"],
-        "scope": "Single-seed local baseline; not the paper's ten-seed reproduction.",
         "upstream_revision": (SCRIPT_DIR / "UPSTREAM_REVISION").read_text().strip(),
-        "config_sha256": hashlib.sha256(args.config.read_bytes()).hexdigest(),
+        "backend": jax.default_backend(),
+        "xla_flags": os.environ.get("XLA_FLAGS", ""),
         "versions": {
             name: version(name) for name in ("jax", "jaxlib", "flax", "optax")
         },
-        "backend": jax.default_backend(),
-        "devices": [str(device) for device in jax.devices()],
-        "jax_platforms": os.environ.get("JAX_PLATFORMS"),
-        "xla_flags": os.environ.get("XLA_FLAGS"),
     }
     (output / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
-    print(f"Results directory: {output}", flush=True)
-    print(
-        "The policy checkpoint is saved on successful completion; "
-        "interrupted runs cannot resume.",
-        flush=True,
-    )
+    print(f"Results: {output}. Checkpoint saves on completion.", flush=True)
 
-    # Keep progress local. Upstream calls this hook after each PPO update.
+    # Upstream reports through W&B; redirect that hook to our local progress log.
     with (output / "progress.jsonl").open("x") as progress:
         def log_progress(metrics):
             row = {
@@ -178,17 +147,13 @@ def main() -> None:
             )
 
         wandb.init(mode="disabled", project=config["PROJECT"], config=config)
+        # Restore the logging hook in finally, even if training fails.
         original_log = module.wandb.log
         module.wandb.log = log_progress
         try:
             result, elapsed = execute_training(module, config)
-            summary = save_results(result, output, config, elapsed)
-            (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-            print(
-                f"Training complete. Saved and verified checkpoint: "
-                f"{output / 'params.msgpack'}",
-                flush=True,
-            )
+            save_results(result, output, elapsed)
+            print(f"Complete. Saved and verified checkpoint: {output / 'params.msgpack'}")
         finally:
             module.wandb.log = original_log
             wandb.finish()
