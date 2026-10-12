@@ -14,7 +14,16 @@ Team Sims is studying cooperation in Overcooked-style environments. OvercookedV2
 - `overcooked-v2/outputs/`: generated results, ignored by Git.
 - `AGENTS.md`: concise project context for coding agents.
 
-## Setup and checks
+## Training options
+
+Users can choose between two training platforms:
+
+1. **Local NVIDIA GPU:** train on your own compatible NVIDIA GPU using Linux or Windows through WSL2. The existing setup scripts and launchers implement this path; follow the setup and checks below.
+2. **Modal cloud GPU:** use Modal when you do not have a compatible local NVIDIA GPU or prefer cloud training. This is the planned alternative; the Modal launcher and setup instructions are not implemented yet.
+
+Both paths should use the same pinned JaxMARL version, baseline configuration, and evaluation protocol so results can be compared.
+
+## Local NVIDIA GPU setup and checks
 
 The verified local setup uses Ubuntu-24.04 in WSL2, Python 3.12, and an RTX 3070. See [the setup guide](overcooked-v2/README.md) for versions, compatibility settings, and requirements.
 

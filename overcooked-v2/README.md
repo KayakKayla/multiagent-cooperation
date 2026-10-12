@@ -1,7 +1,14 @@
-# OvercookedV2 local setup
+# OvercookedV2 training and setup
 
 Source: [JaxMARL](https://github.com/bold-lab-ai/JaxMARL), tracked as a pinned Git submodule. Its commit is also recorded in `UPSTREAM_REVISION`.
 The upstream simulator and PPO algorithm are unchanged. Our scripts provide repeatable local checks and a saved baseline training launcher.
+
+## Training options
+
+- **Local NVIDIA GPU:** users with a compatible NVIDIA GPU can train themselves on Linux or Windows through WSL2 using `setup.sh` and the existing launchers. The checks below were verified on an RTX 3070 in WSL2; full-budget training runtime and memory use remain unverified.
+- **Modal cloud GPU:** users can choose Modal instead of a local GPU. Modal integration and setup instructions are pending; the commands below currently cover local training only.
+
+The intended Modal path should reuse the local path's pinned dependencies, baseline settings, and evaluation protocol, and persist saved weights and results.
 
 ## Current status (2026-09-30)
 
