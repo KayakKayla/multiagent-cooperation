@@ -1,0 +1,6 @@
+interface:
+  display_name: "Overcooked Replay Analysis"
+  short_description: "Explain episodes and inspect chef coordination"
+  default_prompt: "Use $analyze-overcooked-replay to explain this episode, identify supported coordination findings, and suggest one follow-up check."
+policy:
+  allow_implicit_invocation: true
