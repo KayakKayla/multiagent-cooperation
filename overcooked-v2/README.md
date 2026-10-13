@@ -115,7 +115,8 @@ Each evaluation creates a new folder under `outputs/evaluate/` containing:
 Open `replay.html` directly in a browser on Windows, Linux, or macOS. It starts paused
 at step 0 and works offline; viewers need no simulator environment or GPU. Drag the
 timeline backward or forward, use the step buttons or enter a step number, and select
-0.5x, 1x, 2x, or 4x speed. Space plays/pauses; left/right arrows move one step when
+0.25x, 0.5x, 1x, or 2x speed. Pot overlays show the remaining cooking steps, or
+Ready/Waiting. Space plays/pauses; left/right arrows move one step when
 you are not editing a control. Seeking or stepping pauses playback; it stops at step
 400, and Replay starts it again. At 1x each step lasts 100 ms, a display speed rather
 than measured simulator runtime.

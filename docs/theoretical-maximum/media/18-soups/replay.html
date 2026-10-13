@@ -21,6 +21,9 @@
   #kitchen-wrap { position: relative; max-width: 480px; margin: auto; }
   #kitchen { display: block; width: 100%; height: auto; image-rendering: pixelated; }
   .pot-label { position: absolute; background: #101722; color: #fff; border-radius: 3px; padding: 1px 4px; font-size: 12px; pointer-events: none; }
+  .pot-timer { position: absolute; transform: translateY(-100%); background: #101722; color: #fde68a; border-radius: 3px; padding: 3px 2px; font-size: 12px; font-weight: 650; text-align: center; pointer-events: none; }
+  .pot-timer.ready { color: #a7f3d0; }
+  .pot-timer.waiting { color: #aebdd0; }
   .card { padding: 16px; margin-bottom: 12px; background: #182332; border: 1px solid #334155; border-radius: 10px; }
   .card p { margin: 5px 0; }
   .card h2 { font-size: 18px; }
@@ -55,7 +58,7 @@
       <h2 id="state-label">Initial kitchen</h2>
       <div id="kitchen-wrap"><img id="kitchen" alt="Recorded kitchen state"><div id="pot-labels"></div></div>
       <p id="recipe"></p>
-      <p class="muted hint">Yellow dots: onion supply · White circles: plate supply · Green square: serving station</p>
+      <p class="muted hint">Yellow dots: onion supply · White circles: plate supply · Green square: serving station. Pot countdowns show remaining simulator steps.</p>
     </section>
     <aside aria-label="Chef and pot details">
       <div id="chefs"></div>
@@ -76,8 +79,8 @@
       <input id="step-input" type="number" min="0" max="0" value="0" step="1">
       <label for="speed">Speed</label>
       <select id="speed">
-        <option value="0.5">0.5×</option><option value="1" selected>1×</option>
-        <option value="2">2×</option><option value="4">4×</option>
+        <option value="0.25">0.25×</option><option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option><option value="2">2×</option>
       </select>
     </div>
     <p class="muted hint">Drag the timeline in either direction. Seeking and stepping pause playback. Space: play/pause · ← / →: one step</p>
@@ -158,6 +161,15 @@
       label.style.left = `${100 * pot.position[0] / state.grid[0].length}%`;
       label.style.top = `${100 * pot.position[1] / state.grid.length}%`;
       get("pot-labels").append(label);
+      const countdown = document.createElement("span");
+      const ready = pot.status === "ready to plate";
+      countdown.className = `pot-timer${ready ? " ready" : pot.timer > 0 ? "" : " waiting"}`;
+      countdown.textContent = ready ? "Ready" : pot.timer > 0 ? `${pot.timer} steps` : "Waiting";
+      countdown.setAttribute("aria-label", `Pot ${pot.index}: ${pot.status}`);
+      countdown.style.left = label.style.left;
+      countdown.style.top = `${100 * (pot.position[1] + 1) / state.grid.length}%`;
+      countdown.style.width = `${100 / state.grid[0].length}%`;
+      get("pot-labels").append(countdown);
     }
   }
   function pause() {
