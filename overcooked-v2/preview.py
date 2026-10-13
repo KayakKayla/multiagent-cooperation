@@ -9,11 +9,13 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from jaxmarl.environments.overcooked_v2.common import (
+    Direction,
     DynamicObject,
     OvercookedActionsEnum,
     StaticObject,
 )
 from jaxmarl.viz.overcooked_v2_visualizer import OvercookedV2Visualizer
+from replay import save_replay
 
 
 def ingredient_count(value):
@@ -37,19 +39,96 @@ def inventory_name(value):
     return "onion" if value == DynamicObject.ingredient(0) else "ingredient"
 
 
+def build_replay_data(states, actions, rewards, correct, wrong, config, mode, seed):
+    """Describe each post-action state, including the action-free initial state."""
+    count = len(actions)
+    if any(len(values) != count for values in (rewards, correct, wrong)):
+        raise ValueError("Replay action and event counts differ.")
+    if len(states.grid) != count + 1:
+        raise ValueError("Replay needs the initial state plus every resulting state.")
+    totals = [np.concatenate(([0], np.cumsum(values)))
+              for values in (rewards, correct, wrong)]
+    pot_positions = np.argwhere(states.grid[0, :, :, 0] == StaticObject.POT)
+    steps = []
+    for index in range(count + 1):
+        agents = []
+        for agent in range(states.agents.inventory.shape[1]):
+            inventory = int(states.agents.inventory[index, agent])
+            direction = int(states.agents.dir[index, agent])
+            action = None if index == 0 else int(actions[index - 1, agent])
+            agents.append({
+                "id": f"agent_{agent}", "index": agent,
+                "color": ("red", "blue", "green", "purple", "yellow", "orange")[agent % 6],
+                "position": [int(states.agents.pos.x[index, agent]),
+                             int(states.agents.pos.y[index, agent])],
+                "direction": direction, "facing": Direction(direction).name.lower(),
+                "inventory": inventory, "holding": inventory_name(inventory),
+                "action_code": action,
+                "action": None if action is None else OvercookedActionsEnum(action).name,
+            })
+        pots = []
+        for pot, (y, x) in enumerate(pot_positions, 1):
+            contents, timer = map(int, states.grid[index, y, x, 1:])
+            pots.append({
+                "index": pot, "position": [int(x), int(y)],
+                "contents": contents, "ingredients": ingredient_count(contents),
+                "timer": timer,
+                "status": "ready to plate" if contents & DynamicObject.COOKED else (
+                    f"cooking: {timer} steps left" if timer > 0 else "waiting for ingredients"
+                ),
+            })
+        recipe = int(states.recipe[index])
+        steps.append({
+            "step": index, "agents": agents, "pots": pots,
+            "grid": states.grid[index].tolist(), "recipe_code": recipe,
+            "recipe": "three onions" if recipe == 3 * DynamicObject.ingredient(0)
+                      else f"code {recipe}",
+            "reward": 0.0 if index == 0 else float(rewards[index - 1]),
+            "correct_dishes": 0 if index == 0 else int(correct[index - 1]),
+            "wrong_dishes": 0 if index == 0 else int(wrong[index - 1]),
+            "totals": {"team_reward": float(totals[0][index]),
+                       "correct_dishes": int(totals[1][index]),
+                       "wrong_dishes": int(totals[2][index])},
+        })
+    return {
+        "schema_version": 1,
+        "metadata": {
+            "layout": config["ENV_KWARGS"]["layout"], "mode": mode,
+            "episode": 0, "seed": int(seed), "steps": count,
+            "starts": "original fixed starts" if mode == "scripted" else "randomized starts",
+            "agent_view_size": config["ENV_KWARGS"]["agent_view_size"],
+            "upstream_revision": (Path(__file__).parent / "UPSTREAM_REVISION").read_text().strip(),
+            "frame_stride": 1, "frame_ms": 100,
+            "reward": "shared raw environment reward counted once; no shaping",
+            "coordinates": "(column, row), zero-based",
+        },
+        "steps": steps,
+    }
+
+
+def render_replay_frames(states, radius):
+    """Render all states in bounded batches to limit renderer GPU memory use."""
+    visualizer = OvercookedV2Visualizer()
+    batches = []
+    for start in range(0, len(states.grid), 32):
+        batch = jax.tree.map(lambda value: jnp.asarray(value[start:start + 32]), states)
+        batches.append(np.asarray(visualizer.render_sequence(batch, agent_view_size=radius)))
+    return np.concatenate(batches)
+
+
 def save_preview(initial, trace, output: Path, config, mode, seed):
     scripted = mode == "scripted"
     states, actions, rewards, correct, wrong, _ = trace
-    # Include the starting kitchen and terminal kitchen; sample every second step.
+    # HTML retains every step; only the legacy GIF samples every second step.
     states = jax.tree.map(
         lambda first, rest: np.concatenate(([first], rest)), initial, states
     )
     indices = np.unique(np.append(np.arange(0, len(actions) + 1, 2), len(actions)))
-    sampled = jax.tree.map(lambda value: jnp.asarray(value[indices]), states)
     radius = config["ENV_KWARGS"]["agent_view_size"]
-    frames = np.asarray(
-        OvercookedV2Visualizer().render_sequence(sampled, agent_view_size=radius)
-    )
+    all_frames = render_replay_frames(states, radius)
+    save_replay(build_replay_data(states, actions, rewards, correct, wrong,
+                                 config, mode, seed), all_frames, output)
+    frames = all_frames[indices]
     view = f"local {2 * radius + 1} x {2 * radius + 1}" if radius is not None else "full-kitchen"
     totals = [
         np.concatenate(([0], np.cumsum(values)))

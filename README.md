@@ -7,7 +7,7 @@ Team Sims is studying cooperation in Overcooked-style environments. OvercookedV2
 - `overcooked-v2/smoke.py`: one random-action episode and a rendered preview.
 - `overcooked-v2/train_check.py`: a tiny upstream PPO run, with checkpoint save/reload verification.
 - `overcooked-v2/train.py` and `configs/coord_ring.yaml`: a saved single-seed baseline using the paper's Coordination Ring settings.
-- `overcooked-v2/evaluate.py` and `preview.py`: frozen before/after policy tests, per-episode scores, and an annotated GIF.
+- `overcooked-v2/evaluate.py` and `preview.py`: frozen before/after policy tests, per-episode scores, an interactive HTML replay, and an annotated GIF.
 - `overcooked-v2/run.ps1` and `run.sh`: launch checks or user-started baseline training through the local Python environment.
 - `overcooked-v2/setup.sh`: initialize the dependency and install pinned packages.
 - `overcooked-v2/JaxMARL/`: pinned upstream Git submodule.

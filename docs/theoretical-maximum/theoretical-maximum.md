@@ -122,7 +122,12 @@ The action-flow bound is stronger than simply counting nine interactions per sou
 
 ## Reproduce the calculations
 
-### View or regenerate the deterministic GIF
+### View or regenerate the deterministic replay
+
+[Open the interactive replay](media/18-soups/replay.html) in a browser to pause,
+drag the timeline backward or forward, or inspect individual steps. It contains all
+401 states and shows chef 0/red and chef 1/blue with their positions, facing,
+inventories, and the actions that produced the displayed state. The replay works offline.
 
 ![Verified 18-soup scripted replay](media/18-soups/rollout.gif)
 
@@ -140,7 +145,7 @@ Linux equivalent:
 bash overcooked-v2/run.sh scripted
 ```
 
-Both commands verify all 400 steps and save `rollout.gif`, `initial.png`, `final.png`, and `verification.json` under `docs/theoretical-maximum/media/18-soups/`. The Python command below also works directly when the pinned simulator and dependencies are available:
+Both commands verify all 400 steps and save `replay.html`, `rollout.gif`, `initial.png`, `final.png`, and `verification.json` under `docs/theoretical-maximum/media/18-soups/`. The Python command below also works directly when the pinned simulator and dependencies are available:
 
 ```bash
 PYTHONPATH=overcooked-v2/JaxMARL python docs/theoretical-maximum/verify_theoretical_maximum.py --gif

@@ -23,7 +23,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--actions', type=Path, default=HERE / 'theoretical-maximum-actions.json')
     parser.add_argument('--expected-soups', type=int, default=18)
-    parser.add_argument('--gif', action='store_true', help='Save an annotated replay GIF.')
+    parser.add_argument('--gif', action='store_true', help='Save an interactive HTML replay, GIF and images.')
     parser.add_argument('--output', type=Path, default=HERE / 'media' / '18-soups')
     args = parser.parse_args()
     revision = subprocess.check_output(
@@ -105,6 +105,7 @@ def main():
                      {'ENV_KWARGS': {'layout': 'coord_ring', 'agent_view_size': 2}},
                      'scripted', 0)
         (args.output / 'verification.json').write_text(json.dumps(result, indent=2)+'\n')
+        print(f"Replay (open in a browser): {args.output / 'replay.html'}")
         print(f"GIF saved to {args.output / 'rollout.gif'}")
     print(json.dumps(result, indent=2))
 

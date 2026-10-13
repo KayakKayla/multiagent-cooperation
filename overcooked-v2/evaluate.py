@@ -1,4 +1,4 @@
-"""Play a frozen policy and save scores plus one annotated episode (no learning)."""
+"""Play a frozen policy and save scores plus one interactive replay (no learning)."""
 
 import argparse
 import csv
@@ -146,6 +146,8 @@ def main():
         "episode_seeds": seeds, "action_selection": "sample", "recorded_episode": 0,
         "reward": "shared raw environment reward counted once; no shaping",
         "gif_stride": 2, "gif_frame_ms": 200,
+        "replay_file": "replay.html", "replay_schema_version": 1,
+        "replay_stride": 1, "replay_frame_ms": 100,
     }
     (output / "protocol.json").write_text(json.dumps(protocol, indent=2) + "\n")
     print(
@@ -187,6 +189,7 @@ def main():
     }
     (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary, indent=2), flush=True)
+    print(f"Replay (open in a browser): {output / 'replay.html'}", flush=True)
     print(f"GIF: {output / 'rollout.gif'}", flush=True)
 
 

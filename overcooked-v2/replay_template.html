@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chef replay</title>
+<style>
+  :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #101722; color: #e8eef7; }
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  main { max-width: 1080px; margin: auto; padding: 28px 24px; }
+  h1 { margin: 0 0 8px; font-size: 28px; }
+  h2 { margin: 0 0 12px; font-size: 18px; }
+  p { line-height: 1.5; }
+  .muted { color: #aebdd0; }
+  .scores { display: flex; flex-wrap: wrap; gap: 12px; margin: 22px 0; }
+  .score { padding: 12px 18px; border: 1px solid #334155; border-radius: 10px; background: #182332; }
+  .score strong { font-size: 24px; margin-left: 10px; }
+  .scene { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
+  .kitchen-panel { background: #182332; border: 1px solid #334155; border-radius: 12px; padding: 20px; }
+  #kitchen-wrap { position: relative; max-width: 480px; margin: auto; }
+  #kitchen { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+  .pot-label { position: absolute; background: #101722; color: #fff; border-radius: 3px; padding: 1px 4px; font-size: 12px; pointer-events: none; }
+  .card { padding: 16px; margin-bottom: 12px; background: #182332; border: 1px solid #334155; border-radius: 10px; }
+  .card p { margin: 5px 0; }
+  .card h2 { font-size: 18px; }
+  .controls { margin-top: 24px; padding: 20px; border: 1px solid #334155; border-radius: 12px; background: #182332; }
+  #timeline { display: block; width: 100%; margin: 16px 0; accent-color: #8bb9ff; cursor: pointer; }
+  .control-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  button, input, select { font: inherit; }
+  button, select, input[type=number] { color: inherit; background: #25354b; border: 1px solid #53657c; border-radius: 6px; padding: 8px 12px; }
+  button { cursor: pointer; }
+  button:hover { background: #344b6a; }
+  #play { background: #9ac2ff; color: #101722; min-width: 90px; font-weight: 650; }
+  button:disabled { opacity: .4; cursor: default; }
+  input[type=number] { width: 88px; }
+  :focus-visible { outline: 2px solid #9ac2ff; outline-offset: 3px; }
+  #playback-status { margin-left: auto; color: #aebdd0; }
+  .hint { font-size: 13px; margin-bottom: 0; }
+  footer { font-size: 13px; margin-top: 20px; }
+  @media (max-width: 760px) { .scene { grid-template-columns: 1fr; } main { padding: 20px 14px; } #playback-status { margin-left: 0; } }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Chef replay</h1>
+  <div id="subtitle" class="muted"></div>
+  <div class="scores">
+    <div class="score">Team score <strong id="score">0</strong></div>
+    <div class="score">Correct dishes <strong id="correct">0</strong></div>
+    <div class="score">Wrong dishes <strong id="wrong">0</strong></div>
+  </div>
+  <div class="scene">
+    <section class="kitchen-panel" aria-label="Kitchen state">
+      <h2 id="state-label">Initial kitchen</h2>
+      <div id="kitchen-wrap"><img id="kitchen" alt="Recorded kitchen state"><div id="pot-labels"></div></div>
+      <p id="recipe"></p>
+      <p class="muted hint">Yellow dots: onion supply · White circles: plate supply · Green square: serving station</p>
+    </section>
+    <aside aria-label="Chef and pot details">
+      <div id="chefs"></div>
+      <div id="pots"></div>
+    </aside>
+  </div>
+  <section class="controls" aria-label="Replay controls">
+    <div class="control-row">
+      <strong id="step-label">Step 0</strong>
+      <span id="playback-status" role="status">Paused</span>
+    </div>
+    <input id="timeline" type="range" min="0" max="0" value="0" step="1" aria-label="Replay timeline">
+    <div class="control-row">
+      <button id="play" type="button" aria-pressed="false">Play</button>
+      <button id="previous" type="button" aria-label="Previous step">← Step</button>
+      <button id="next" type="button" aria-label="Next step">Step →</button>
+      <label for="step-input">Go to step</label>
+      <input id="step-input" type="number" min="0" max="0" value="0" step="1">
+      <label for="speed">Speed</label>
+      <select id="speed">
+        <option value="0.5">0.5×</option><option value="1" selected>1×</option>
+        <option value="2">2×</option><option value="4">4×</option>
+      </select>
+    </div>
+    <p class="muted hint">Drag the timeline in either direction. Seeking and stepping pause playback. Space: play/pause · ← / →: one step</p>
+  </section>
+  <footer class="muted">
+    <p id="perspective"></p>
+    <p>Actions describe the transition into the displayed state. Positions are (column, row), starting at zero. Scores are raw shared team reward, counted once.</p>
+  </footer>
+</main>
+<script id="replay-data" type="application/json">__REPLAY_DATA__</script>
+<script>
+"use strict";
+(() => {
+  const data = JSON.parse(document.getElementById("replay-data").textContent);
+  if (data.schema_version !== 1 || data.steps.length !== data.frames.length || !data.steps.length) {
+    throw new Error("Unsupported or incomplete replay data.");
+  }
+  const get = id => document.getElementById(id);
+  const last = data.steps.length - 1;
+  let current = 0;
+  let playing = false;
+  let timer = null;
+  const colors = {red: "#ff7b7b", blue: "#83b5ff", green: "#86efac", purple: "#c4b5fd", yellow: "#fde68a", orange: "#fdba74"};
+
+  // Panels only consume recorded data; future panels can use additional payload fields.
+  function paragraph(parent, text, muted = false) {
+    const node = document.createElement("p");
+    node.textContent = text;
+    if (muted) node.className = "muted";
+    parent.append(node);
+  }
+  function card(title, color) {
+    const node = document.createElement("section");
+    node.className = "card";
+    const heading = document.createElement("h2");
+    heading.textContent = title;
+    if (color) heading.style.color = color;
+    node.append(heading);
+    return node;
+  }
+  function render() {
+    const state = data.steps[current];
+    get("kitchen").src = data.frames[current];
+    get("kitchen").alt = `Recorded kitchen after step ${current}`;
+    get("state-label").textContent = current === 0 ? "Initial kitchen" : `Kitchen after step ${current}`;
+    get("recipe").textContent = `Recipe: ${state.recipe}`;
+    get("score").textContent = state.totals.team_reward;
+    get("correct").textContent = state.totals.correct_dishes;
+    get("wrong").textContent = state.totals.wrong_dishes;
+    get("step-label").textContent = `Step ${current} / ${last}`;
+    get("timeline").value = current;
+    get("timeline").setAttribute("aria-valuetext", `Step ${current} of ${last}`);
+    get("step-input").value = current;
+    get("previous").disabled = current === 0;
+    get("next").disabled = current === last;
+    get("play").textContent = playing ? "Pause" : current === last ? "Replay" : "Play";
+    get("play").setAttribute("aria-pressed", String(playing));
+    get("playback-status").textContent = playing ? "Playing" : current === last ? "Finished" : "Paused";
+    get("chefs").replaceChildren();
+    for (const agent of state.agents) {
+      const node = card(`Chef ${agent.index} (${agent.color})`, colors[agent.color]);
+      paragraph(node, `${agent.id} · Position (${agent.position.join(", ")})`, true);
+      paragraph(node, `Facing: ${agent.facing}`);
+      paragraph(node, `Holding: ${agent.holding}`);
+      paragraph(node, agent.action === null ? "Last action: none (initial state)" : `Last action: ${agent.action}`);
+      get("chefs").append(node);
+    }
+    get("pots").replaceChildren();
+    get("pot-labels").replaceChildren();
+    for (const pot of state.pots) {
+      const node = card(`Pot ${pot.index} · (${pot.position.join(", ")})`);
+      paragraph(node, `${pot.ingredients} / 3 ingredients`);
+      paragraph(node, pot.status, true);
+      get("pots").append(node);
+      const label = document.createElement("span");
+      label.className = "pot-label";
+      label.textContent = `P${pot.index}`;
+      label.style.left = `${100 * pot.position[0] / state.grid[0].length}%`;
+      label.style.top = `${100 * pot.position[1] / state.grid.length}%`;
+      get("pot-labels").append(label);
+    }
+  }
+  function pause() {
+    playing = false;
+    clearTimeout(timer);
+    timer = null;
+  }
+  function seek(value) {
+    if (value === "" || !Number.isFinite(Number(value))) { render(); return; }
+    pause();
+    current = Math.max(0, Math.min(last, Math.trunc(Number(value))));
+    render();
+  }
+  function schedule() {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      current = Math.min(last, current + 1);
+      if (current === last) pause();
+      render();
+      if (playing) schedule();
+    }, data.metadata.frame_ms / Number(get("speed").value));
+  }
+  function toggle() {
+    if (playing) pause();
+    else if (last > 0) {
+      if (current === last) current = 0;
+      playing = true;
+      schedule();
+    }
+    render();
+  }
+  const meta = data.metadata;
+  document.title = `${meta.layout} — chef replay`;
+  get("title").textContent = `${meta.layout} · ${meta.mode === "scripted" ? "Scripted reference" : `${meta.mode} policy`}`;
+  get("subtitle").textContent = `Episode ${meta.episode + 1} · ${meta.mode === "scripted" ? meta.starts : `Test seed ${meta.seed}`} · ${last} steps`;
+  get("perspective").textContent = meta.mode === "scripted"
+    ? "Saved joint-action schedule from the original fixed starts; no learned policy."
+    : `Full kitchen shown for viewers. Chefs receive ${meta.agent_view_size === null ? "full-kitchen" : `local ${2 * meta.agent_view_size + 1} × ${2 * meta.agent_view_size + 1}`} observations.`;
+  get("timeline").max = last;
+  get("step-input").max = last;
+  get("play").addEventListener("click", toggle);
+  get("previous").addEventListener("click", () => seek(current - 1));
+  get("next").addEventListener("click", () => seek(current + 1));
+  get("timeline").addEventListener("input", event => seek(event.target.value));
+  get("step-input").addEventListener("focus", () => { pause(); render(); });
+  get("step-input").addEventListener("change", event => seek(event.target.value));
+  get("speed").addEventListener("change", () => { if (playing) schedule(); });
+  document.addEventListener("keydown", event => {
+    if (event.target.closest("input, select, textarea") || event.target.isContentEditable) return;
+    if (!["Space", "ArrowLeft", "ArrowRight"].includes(event.code)) return;
+    event.preventDefault();
+    if (event.code === "Space") { if (!event.repeat) toggle(); }
+    else seek(current + (event.code === "ArrowLeft" ? -1 : 1));
+  });
+  // Warm the browser image cache without fetching any external resources.
+  const images = data.frames.map(src => { const image = new Image(); image.src = src; return image; });
+  render();
+})();
+</script>
+</body>
+</html>

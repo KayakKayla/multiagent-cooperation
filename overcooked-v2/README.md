@@ -71,7 +71,7 @@ To run another independent seed later, use `train -Seed 43`. Seeds are local run
 the paper's exact seed sequence has not been reproduced. External logging is disabled.
 Linux equivalent: `bash overcooked-v2/run.sh train --seed 42`.
 
-## Before/after policy evaluation and GIFs
+## Before/after policy evaluation and replays
 
 Training and evaluation are separate commands. Evaluation freezes the policy's weights:
 it plays games and records results, without updating anything. Training saves only the
@@ -108,10 +108,28 @@ Each evaluation creates a new folder under `outputs/evaluate/` containing:
 - `config.json` and `protocol.json`: environment/model settings, test seeds, policy hash,
   source revision, and the recorded episode selection. An untrained evaluation also
   saves its actual initial weights in `params.msgpack`.
-- `rollout.gif`, `initial.png`, and `final.png`: enlarged kitchen plus counters, chef
-  inventories/actions, numbered pots with fill/cooking status, and a graphics legend.
+- `replay.html`: a self-contained browser replay with every simulator step, chef
+  positions/facing/inventories/actions, numbered pots, deliveries, and raw team score.
+- `rollout.gif`, `initial.png`, and `final.png`: the existing annotated kitchen previews.
 
-The GIF always shows the **first** test episode, with one frame per two steps; its score
+Open `replay.html` directly in a browser on Windows, Linux, or macOS. It starts paused
+at step 0 and works offline; viewers need no simulator environment or GPU. Drag the
+timeline backward or forward, use the step buttons or enter a step number, and select
+0.5x, 1x, 2x, or 4x speed. Space plays/pauses; left/right arrows move one step when
+you are not editing a control. Seeking or stepping pauses playback; it stops at step
+400, and Replay starts it again. At 1x each step lasts 100 ms, a display speed rather
+than measured simulator runtime.
+
+There are 401 states: the initial kitchen plus the result of all 400 joint actions.
+The displayed action is the action that produced that state, so step 0 has no previous
+action. Chef 0 is red (`agent_0`), and chef 1 is blue (`agent_1`); positions are
+zero-based `(column, row)`. The HTML embeds a versioned JSON payload with metadata,
+state/action/event data, and PNG frames, separate from its playback UI. Future panels
+can consume additional recorded information. The current policy does not produce
+explicit task plans.
+
+The HTML replay and GIF always show the **first** test episode. The HTML retains every
+step; the GIF has one frame per two steps. Their score
 is for that episode, not the five-episode average. The dashboard is for spectators and
 adds nothing to the policy's observations. Correct and wrong dishes are counted as
 separate delivery events, including simultaneous deliveries. The shared team reward is
@@ -126,18 +144,24 @@ Linux equivalents: `bash overcooked-v2/run.sh evaluate --untrained`, then
 `bash overcooked-v2/run.sh evaluate --run outputs/train/<run-folder>` (the latter path is
 relative to `overcooked-v2`, since `run.sh` sets that working directory).
 
+Replay data checks, using the installed simulator Python environment from this directory:
+`python -m unittest discover -s tests -v`. These check state/action alignment, delivery
+totals, pot status, the self-contained HTML payload, and the saved scripted replay
+against its full audit when that replay is available. No training is performed.
+
 ## Scripted 18-soup reference
 
 The saved fixed-start Coordination Ring schedule delivers 18 soups (360 raw team
-reward), with no chef overlaps. Replay and render its annotated GIF from the repository root:
+reward), with no chef overlaps. Verify it and generate its HTML replay and annotated GIF from the repository root:
 
 ```powershell
 .\overcooked-v2\run.ps1 scripted
 ```
 
 Linux equivalent: `bash overcooked-v2/run.sh scripted`. Files are saved under
-`docs/theoretical-maximum/media/18-soups/`. This runs saved joint actions without training. See
-[the maximum-score analysis](../docs/theoretical-maximum/theoretical-maximum.md) for the GIF, full schedule,
+`docs/theoretical-maximum/media/18-soups/`. Open `replay.html` there to pause or inspect
+any step. This runs saved joint actions without training. See
+[the maximum-score analysis](../docs/theoretical-maximum/theoretical-maximum.md) for the replay, full schedule,
 and 19-soup search results. The exact optimum remains 18 or 19; 18 is verified achievable.
 
 ## Run setup checks from PowerShell
