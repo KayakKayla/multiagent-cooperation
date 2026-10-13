@@ -38,6 +38,7 @@ def inventory_name(value):
 
 
 def save_preview(initial, trace, output: Path, config, mode, seed):
+    scripted = mode == "scripted"
     states, actions, rewards, correct, wrong, _ = trace
     # Include the starting kitchen and terminal kitchen; sample every second step.
     states = jax.tree.map(
@@ -71,8 +72,10 @@ def save_preview(initial, trace, output: Path, config, mode, seed):
         def text(x, y, value, color="white", face=font):
             draw.text((x, y), value, fill=color, font=face)
 
-        text(20, 16, f"{config['ENV_KWARGS']['layout']} | {mode.upper()} policy", face=title_font)
-        text(20, 56, f"Episode 1 | test seed {seed} | step {index} / {len(actions)}", "#cbd5e1")
+        label = "SCRIPTED reference" if scripted else f"{mode.upper()} policy"
+        text(20, 16, f"{config['ENV_KWARGS']['layout']} | {label}", face=title_font)
+        start_label = "original fixed starts" if scripted else f"test seed {seed}"
+        text(20, 56, f"Episode 1 | {start_label} | step {index} / {len(actions)}", "#cbd5e1")
         counters = (
             f"Correct dishes: {int(totals[1][index])}     "
             f"Wrong dishes: {int(totals[2][index])}     "
@@ -90,7 +93,8 @@ def save_preview(initial, trace, output: Path, config, mode, seed):
         for agent in range(len(initial.agents.inventory)):
             y = 139 + agent * 104
             color = ("#ff6b6b", "#60a5fa")[agent % 2]
-            text(right, y, f"Chef {agent + 1} ({'red' if agent == 0 else 'blue'})", color)
+            number = agent if scripted else agent + 1
+            text(right, y, f"Chef {number} ({'red' if agent == 0 else 'blue'})", color)
             holding = inventory_name(states.agents.inventory[index, agent])
             text(right, y + 29, f"Holding: {holding}")
             action = "start" if index == 0 else (
@@ -113,14 +117,19 @@ def save_preview(initial, trace, output: Path, config, mode, seed):
         text(right, 557, "Yellow dots: onion supply", face=small_font)
         text(right, 581, "White circles: plate supply", face=small_font)
         text(right, 605, "Green square: deliver here", face=small_font)
+        description = (
+            "Deterministic joint actions from a saved schedule; no learned policy."
+            if scripted else
+            f"Full kitchen shown for viewers. Chefs still receive only their {view} observations."
+        )
         text(
             20, canvas_height - 53,
-            f"Full kitchen shown for viewers. Chefs still receive only their {view} observations.",
+            description,
             "#cbd5e1", small_font,
         )
         text(
             20, canvas_height - 28,
-            "Counters are display only. One frame per two steps; actions shown for the latest step.",
+            "Score labels are display only. One frame per two steps; actions shown for the latest step.",
             "#94a3b8", small_font,
         )
         annotated.append(image)

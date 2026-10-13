@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('smoke', 'train-check', 'train', 'evaluate')]
+    [ValidateSet('smoke', 'train-check', 'train', 'evaluate', 'scripted')]
     [string]$Mode = 'smoke',
 
     [string]$Layout = '',
@@ -25,6 +25,10 @@ if ($Mode -eq 'train') {
     $runArguments += @('--seed', "$Seed")
     if ($DryRun) {
         $runArguments += '--dry-run'
+    }
+} elseif ($Mode -eq 'scripted') {
+    if ($Layout -or $DryRun -or $PSBoundParameters.ContainsKey('Seed')) {
+        throw 'Scripted replay uses original fixed starts. Omit -Layout, -DryRun and -Seed.'
     }
 } elseif ($Mode -eq 'evaluate') {
     if ($Layout -or $DryRun) {

@@ -1,0 +1,28 @@
+{
+  "backend": "cpu",
+  "steps": 400,
+  "deliveries": 18,
+  "reward": 360.0,
+  "delivery_steps": [
+    41,
+    55,
+    83,
+    97,
+    125,
+    139,
+    167,
+    181,
+    209,
+    223,
+    251,
+    265,
+    293,
+    307,
+    335,
+    349,
+    377,
+    391
+  ],
+  "overlaps": 0,
+  "upstream_revision": "976aeb152cb184a5095021968bba94da96eb6394"
+}

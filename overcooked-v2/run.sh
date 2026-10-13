@@ -37,6 +37,9 @@ case "$mode" in
     evaluate)
         exec "$venv_path/bin/python" evaluate.py "$@"
         ;;
+    scripted)
+        exec "$venv_path/bin/python" ../docs/theoretical-maximum/verify_theoretical_maximum.py --gif "$@"
+        ;;
     *)
         echo "Unknown mode: $mode" >&2
         exit 2

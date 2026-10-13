@@ -1,0 +1,101 @@
+{
+  "date": "2026-10-12",
+  "target_deliveries": 19,
+  "starting_state": "original positions, up-facing, empty kitchen",
+  "attempts": [
+    {
+      "beam_width": 20000,
+      "cooking_bonus": 0.02,
+      "deadline_decay_steps": 40,
+      "horizon": 400,
+      "deliveries": 18,
+      "delivery_steps": [
+        43,
+        60,
+        82,
+        99,
+        125,
+        142,
+        165,
+        182,
+        208,
+        225,
+        247,
+        264,
+        290,
+        307,
+        333,
+        350,
+        369,
+        387
+      ],
+      "audit_replay_passed": true
+    },
+    {
+      "beam_width": 30000,
+      "cooking_bonus": 0.1,
+      "deadline_decay_steps": 20,
+      "horizon": 400,
+      "deliveries": 18,
+      "delivery_steps": [
+        42,
+        59,
+        80,
+        98,
+        125,
+        140,
+        167,
+        184,
+        210,
+        227,
+        250,
+        267,
+        292,
+        309,
+        334,
+        351,
+        372,
+        389
+      ],
+      "audit_replay_passed": true
+    },
+    {
+      "beam_width": 40000,
+      "cooking_bonus": 0,
+      "deadline_decay_steps": 60,
+      "horizon": 400,
+      "deliveries": 18,
+      "delivery_steps": [
+        42,
+        59,
+        84,
+        101,
+        123,
+        140,
+        165,
+        182,
+        207,
+        224,
+        249,
+        266,
+        289,
+        306,
+        331,
+        348,
+        369,
+        387
+      ],
+      "audit_replay_passed": true
+    }
+  ],
+  "nineteen_found": false,
+  "proof_of_infeasibility": false,
+  "upper_bound_deliveries": 19,
+  "joint_flow_bound_attempt": {
+    "states": 14336,
+    "edges": 340186,
+    "time_limit_seconds": 90,
+    "status": "TIME_LIMIT",
+    "certified_bound": null
+  }
+}

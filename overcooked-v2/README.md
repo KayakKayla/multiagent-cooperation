@@ -126,6 +126,20 @@ Linux equivalents: `bash overcooked-v2/run.sh evaluate --untrained`, then
 `bash overcooked-v2/run.sh evaluate --run outputs/train/<run-folder>` (the latter path is
 relative to `overcooked-v2`, since `run.sh` sets that working directory).
 
+## Scripted 18-soup reference
+
+The saved fixed-start Coordination Ring schedule delivers 18 soups (360 raw team
+reward), with no chef overlaps. Replay and render its annotated GIF from the repository root:
+
+```powershell
+.\overcooked-v2\run.ps1 scripted
+```
+
+Linux equivalent: `bash overcooked-v2/run.sh scripted`. Files are saved under
+`docs/theoretical-maximum/media/18-soups/`. This runs saved joint actions without training. See
+[the maximum-score analysis](../docs/theoretical-maximum/theoretical-maximum.md) for the GIF, full schedule,
+and 19-soup search results. The exact optimum remains 18 or 19; 18 is verified achievable.
+
 ## Run setup checks from PowerShell
 
 From the `multiagent-cooperation` repository root:
