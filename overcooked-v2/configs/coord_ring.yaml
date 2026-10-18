@@ -46,3 +46,8 @@ NUM_SEEDS: 1
 ENTITY: ""
 PROJECT: se390-overcooked-v2
 WANDB_MODE: disabled
+
+# Setting the algorithm for training
+ALGORITHM: "ippo_rnn"
+CHECKPOINT_INTERVAL_UPDATES: 10
+CHECKPOINT_KEEP_LAST: 3
