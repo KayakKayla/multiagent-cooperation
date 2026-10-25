@@ -1,0 +1,6 @@
+.deps/
+bin/
+obj/
+outputs/
+__pycache__/
+*.pyc

@@ -12,6 +12,7 @@ Team Sims is studying cooperation in Overcooked-style environments. OvercookedV2
 - `overcooked-v2/setup.sh`: initialize the dependency and install pinned packages.
 - `overcooked-v2/JaxMARL/`: pinned upstream Git submodule.
 - `overcooked-v2/outputs/`: generated results, ignored by Git.
+- `overcooked2-bridge/`: optional, user-supervised integration checks for the installed commercial Steam game; see its [setup and test guide](overcooked2-bridge/README.md).
 - `AGENTS.md`: concise project context for coding agents.
 
 ## Training options
