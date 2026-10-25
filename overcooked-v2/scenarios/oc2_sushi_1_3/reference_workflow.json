@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "source": "Manual Story 1-3 play observed through bridge v0.2.0 on 2026-10-25",
+  "assembly_sha256": "8d548c632f48b07883e4e9861ddb834588f6edca9ff56920316daf5e33647159",
+  "raw_evidence": "overcooked2-bridge/outputs/level-1-3/ (local ignored artifacts)",
+  "scope": "Semantic recipe and plate-cycle checkpoints; not exact IDs, geometry, stack counts, timing calibration, or score",
+  "observed": {
+    "plate_ingredients": ["cucumber", "cooked rice", "nori"],
+    "required_rice_cooking_units": 12,
+    "partial_rice_progress": 0.333099544,
+    "cooked_rice_state": "Cooked",
+    "pot_transport_preserves_cooked_rice": true,
+    "pouring_empties_pot": true,
+    "dirty_plate_return_observed": true,
+    "clean_plate_after_washing_observed": true
+  }
+}

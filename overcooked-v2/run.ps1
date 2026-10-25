@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('smoke', 'train-check', 'train', 'evaluate', 'scripted')]
+    [ValidateSet('smoke', 'train-check', 'train', 'evaluate', 'scripted', 'scenario')]
     [string]$Mode = 'smoke',
 
     [string]$Layout = '',
