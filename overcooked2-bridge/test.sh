@@ -17,6 +17,6 @@ PY
 "$sdk/dotnet" "$sdk/sdk/8.0.426/Roslyn/bincore/csc.dll" -nologo -target:exe \
     "-out:$test_output/CoreTests.dll" "@$test_output/references.rsp" \
     "$bridge_root/plugin/Protocol.cs" "$bridge_root/plugin/Transport.cs" \
-    "$bridge_root/plugin/JsonOutput.cs" "$bridge_root/tests/CoreTests.cs"
+    "$bridge_root/plugin/JsonOutput.cs" "$bridge_root/plugin/KitchenSnapshot.cs" "$bridge_root/tests/CoreTests.cs"
 "$sdk/dotnet" "$test_output/CoreTests.dll"
 PYTHONPYCACHEPREFIX="$test_output/pycache" python3 -m unittest discover -s "$bridge_root/tests" -p 'test_*.py' -v

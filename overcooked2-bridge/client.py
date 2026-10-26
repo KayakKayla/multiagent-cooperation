@@ -11,6 +11,8 @@ import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+# A kitchen snapshot (and an action's before/after pair) can exceed the old 64 KiB.
+MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 
 
 def utc():
@@ -60,8 +62,8 @@ class Client:
         request = dict(op=op, request_id=uuid.uuid4().hex, **fields)
         start = utc()
         self.socket.sendall(json.dumps(request, allow_nan=False).encode() + b'\n')
-        line = self.reader.readline(65537)
-        if not line or len(line) > 65536 or not line.endswith(b'\n'):
+        line = self.reader.readline(MAX_RESPONSE_BYTES + 1)
+        if not line or len(line) > MAX_RESPONSE_BYTES or not line.endswith(b'\n'):
             raise RuntimeError('Connection closed or invalid response framing; no command was retried')
         response = json.loads(line)
         if self.report:
@@ -111,6 +113,20 @@ def show(state):
         print('Chef', entry['chef_id'], entry['name'], '| selected:', entry['selected'],
               '| ready:', entry['can_control'], '| position:', entry['position'],
               '| held:', entry['held'])
+    kitchen = state.get('kitchen')
+    if kitchen is not None:
+        print('Kitchen:', len(kitchen['stations']), 'stations,', len(kitchen['items']),
+              'items | available:', kitchen['available'], '| coverage:', kitchen['coverage'])
+        for station in kitchen['stations']:
+            print('Station', station['station_id'], station['name'], '| roles:', ', '.join(station['roles']),
+                  '| position:', station['position'], '| item:', station['item_id'],
+                  '| dispenses:', station['dispenses'])
+        for item in kitchen['items']:
+            print('Item', item['item_id'], item['name'], '| location:', item['location'],
+                  '| chef:', item['held_by_chef_id'], '| station:', item['station_id'],
+                  '| chopping:', item['chopping'], '| cooking:', item['cooking'])
+        for warning in kitchen['warnings']:
+            print('Kitchen warning:', warning)
 
 
 def countdown(seconds):
@@ -233,7 +249,8 @@ def main():
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--report-dir', type=Path)
     commands = parser.add_subparsers(dest='op', required=True)
-    commands.add_parser('state')
+    p = commands.add_parser('state')
+    p.add_argument('--json', dest='json_output', action='store_true', help='Write the complete response as JSON to stdout')
     commands.add_parser('release')
     for op in ('move', 'pickup'):
         p = commands.add_parser(op)
@@ -264,7 +281,11 @@ def main():
             countdown(getattr(args, 'delay', 0))
             with Client(args.port, report) as client:
                 if args.op == 'state':
-                    show(client.request('state')['state'])
+                    response = client.request('state')
+                    if args.json_output:
+                        print(json.dumps(response, indent=2, allow_nan=False))
+                    else:
+                        show(response['state'])
                 elif args.op == 'release':
                     client.request('release')
                     print('Input released.')
@@ -280,7 +301,7 @@ def main():
         return 1
     finally:
         report.save()
-        print('Report:', report.directory)
+        print('Report:', report.directory, file=sys.stderr if getattr(args, 'json_output', False) else sys.stdout)
     return 0
 
 

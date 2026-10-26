@@ -10,10 +10,10 @@ using Team17.Online;
 
 namespace Sims.Overcooked2Bridge
 {
-    [BepInPlugin("ca.waterloo.sims.overcooked2bridge", "Sims Overcooked2 Bridge", "0.1.0")]
+    [BepInPlugin("ca.waterloo.sims.overcooked2bridge", "Sims Overcooked2 Bridge", "0.2.0")]
     public class BridgePlugin : BaseUnityPlugin
     {
-        public const string Version = "0.1.0";
+        public const string Version = "0.2.0";
         Transport transport;
         string sceneToken = Guid.NewGuid().ToString("N");
         string assemblyHash;
@@ -152,7 +152,8 @@ namespace Sims.Overcooked2Bridge
         Snapshot Capture()
         {
             var chefs = new List<ChefState>();
-            foreach (PlayerControls chef in FindChefs())
+            PlayerControls[] players = FindChefs();
+            foreach (PlayerControls chef in players)
             {
                 var held = new HeldState();
                 var carrier = chef.GetComponent<ServerPlayerAttachmentCarrier>();
@@ -175,7 +176,8 @@ namespace Sims.Overcooked2Bridge
                 frame = Time.frameCount, monotonic_seconds = Now(),
                 paused = Paused(), in_round = InRound(), local_single_player = LocalSession(),
                 input_active = active != null && active.Window.Live,
-                active_chef_id = active == null ? 0 : active.ChefId, chefs = chefs.ToArray()
+                active_chef_id = active == null ? 0 : active.ChefId, chefs = chefs.ToArray(),
+                kitchen = KitchenReader.Capture(players)
             };
         }
         void EndInput(string reason)
@@ -271,6 +273,7 @@ namespace Sims.Overcooked2Bridge
         public double monotonic_seconds;
         public bool paused, in_round, local_single_player, input_active;
         public ChefState[] chefs;
+        public KitchenSnapshot kitchen;
     }
     [Serializable] public class ChefState
     {

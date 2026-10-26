@@ -57,6 +57,31 @@ class CoreTests
         Check(encoded == "{\"ok\":true,\"state\":{\"name\":\"chef\\u000a\\\"1\\\"\",\"ids\":[1,-2]},\"before\":null}", "nested state JSON is preserved");
         System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("fr-FR");
         Check(JsonOutput.Write(new double[] { 1.25, -3.5 }) == "[1.25,-3.5]", "JSON numbers independent of system locale");
+        Check(KitchenValues.Completion(5, 10) == 0.5f, "cooking completion fraction");
+        Check(KitchenValues.Completion(15, 10) == 1, "completion bounded while raw elapsed preserves overcooking");
+        Check(KitchenValues.Completion(-1, 10) == 0, "negative completion bounded");
+        Check(KitchenValues.Completion(1, 0) == null, "unknown zero-duration progress is null");
+        Check(KitchenValues.Completion(float.NaN, 10) == null, "NaN progress is unknown");
+        Check(KitchenValues.Completion(1, float.PositiveInfinity) == null, "infinite duration is unknown");
+        Check(KitchenValues.Finite(0) == 0, "known zero progress remains zero");
+        Check(KitchenValues.Location(false, null, null) == "unattached", "free item");
+        Check(KitchenValues.Location(true, 42, null) == "held", "held item ownership");
+        Check(KitchenValues.Location(true, null, 7) == "station", "station item ownership");
+        Check(KitchenValues.Location(true, null, null) == "attached_unknown", "unknown attachment is not called loose");
+        Check(KitchenValues.Location(null, null, null) == "attached_unknown", "missing attachment state is not called loose");
+        Check(KitchenValues.Location(true, 42, 7) == "ambiguous", "conflicting owners remain explicit");
+        var snapshot = new KitchenSnapshot {
+            available = true,
+            stations = new[] { new StationSnapshot { station_id = 7, item_id = 9, roles = new[] { "chopping_board" } } },
+            items = new[] { new ItemSnapshot { item_id = 9, station_id = 7, location = "station",
+                chopping = new ChopProgress { completion_fraction = 0 }, contents_known = true,
+                contents = new[] { new RecipeNode { definition_id = 123 }, new RecipeNode { definition_id = 123 } } } }
+        };
+        string kitchenJson = JsonOutput.Write(snapshot);
+        Check(kitchenJson.Contains("\"held_by_chef_id\":null"), "unknown owner serialized as null");
+        Check(kitchenJson.Contains("\"completion_fraction\":0"), "known zero progress preserved");
+        Check(kitchenJson.Split(new[] { "\"definition_id\":123" }, StringSplitOptions.None).Length == 3, "repeated ingredients preserved");
+        Check(kitchenJson.Contains("\"station_id\":7") && kitchenJson.Contains("\"item_id\":9"), "kitchen JSON preserves linked station/item identities");
         Check(Command.Parse("{\"op\":\"state\"}").Op == "state", "state");
         Check(Command.Parse("{\"op\":\"release\"}").Op == "release", "release");
         Check(Command.Parse(Move("1")).DurationMs == 1, "minimum duration");
