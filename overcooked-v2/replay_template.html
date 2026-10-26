@@ -27,7 +27,7 @@
   .card { padding: 16px; margin-bottom: 12px; background: #182332; border: 1px solid #334155; border-radius: 10px; }
   .card p { margin: 5px 0; }
   .card h2 { font-size: 18px; }
-  .controls { margin-top: 24px; padding: 20px; border: 1px solid #334155; border-radius: 12px; background: #182332; }
+  .controls { margin: 0 0 16px; padding: 12px; border: 1px solid #334155; border-radius: 12px; background: #182332; }
   #timeline { display: block; width: 100%; margin: 16px 0; accent-color: #8bb9ff; cursor: pointer; }
   .control-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   button, input, select { font: inherit; }
@@ -56,35 +56,37 @@
   <div class="scene">
     <section class="kitchen-panel" aria-label="Kitchen state">
       <h2 id="state-label">Initial kitchen</h2>
+      <section class="controls" aria-label="Replay controls">
+        <div class="control-row">
+          <strong id="step-label">Step 0</strong>
+          <span id="playback-status" role="status">Paused</span>
+        </div>
+        <input id="timeline" type="range" min="0" max="0" value="0" step="1" aria-label="Replay timeline">
+        <div class="control-row">
+          <button id="play" type="button" aria-pressed="false">Play</button>
+          <button id="previous" type="button" aria-label="Previous step">← Step</button>
+          <button id="next" type="button" aria-label="Next step">Step →</button>
+          <label for="step-input">Go to step</label>
+          <input id="step-input" type="number" min="0" max="0" value="0" step="1">
+          <label for="speed">Speed</label>
+          <select id="speed">
+            <option value="0.25">0.25×</option><option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option><option value="2">2×</option>
+          </select>
+        </div>
+        <p class="muted hint">Drag the timeline in either direction. Seeking and stepping pause playback. Space: play/pause · ← / →: one step</p>
+      </section>
       <div id="kitchen-wrap"><img id="kitchen" alt="Recorded kitchen state"><div id="pot-labels"></div></div>
       <p id="recipe"></p>
-      <p class="muted hint">Yellow dots: onion supply · White circles: plate supply · Green square: serving station. Pot countdowns show remaining simulator steps.</p>
+      <p id="legend" class="muted hint">Yellow dots: onion supply · White circles: plate supply · Green square: serving station. Pot countdowns show remaining simulator steps.</p>
+      <p id="milestone" class="muted hint" hidden></p>
     </section>
     <aside aria-label="Chef and pot details">
       <div id="chefs"></div>
       <div id="pots"></div>
     </aside>
   </div>
-  <section class="controls" aria-label="Replay controls">
-    <div class="control-row">
-      <strong id="step-label">Step 0</strong>
-      <span id="playback-status" role="status">Paused</span>
-    </div>
-    <input id="timeline" type="range" min="0" max="0" value="0" step="1" aria-label="Replay timeline">
-    <div class="control-row">
-      <button id="play" type="button" aria-pressed="false">Play</button>
-      <button id="previous" type="button" aria-label="Previous step">← Step</button>
-      <button id="next" type="button" aria-label="Next step">Step →</button>
-      <label for="step-input">Go to step</label>
-      <input id="step-input" type="number" min="0" max="0" value="0" step="1">
-      <label for="speed">Speed</label>
-      <select id="speed">
-        <option value="0.25">0.25×</option><option value="0.5">0.5×</option>
-        <option value="1" selected>1×</option><option value="2">2×</option>
-      </select>
-    </div>
-    <p class="muted hint">Drag the timeline in either direction. Seeking and stepping pause playback. Space: play/pause · ← / →: one step</p>
-  </section>
+  <details id="scenario-details" hidden><summary>Exact scenario items</summary><pre id="scenario-items" style="white-space:pre-wrap"></pre></details>
   <footer class="muted">
     <p id="perspective"></p>
     <p>Actions describe the transition into the displayed state. Positions are (column, row), starting at zero. Scores are raw shared team reward, counted once.</p>
@@ -127,6 +129,10 @@
     get("kitchen").alt = `Recorded kitchen after step ${current}`;
     get("state-label").textContent = current === 0 ? "Initial kitchen" : `Kitchen after step ${current}`;
     get("recipe").textContent = `Recipe: ${state.recipe}`;
+    get("milestone").hidden = !state.milestone;
+    get("milestone").textContent = state.milestone || "";
+    get("scenario-details").hidden = !state.items;
+    get("scenario-items").textContent = state.items ? JSON.stringify(state.items, null, 2) : "";
     get("score").textContent = state.totals.team_reward;
     get("correct").textContent = state.totals.correct_dishes;
     get("wrong").textContent = state.totals.wrong_dishes;
@@ -152,7 +158,7 @@
     get("pot-labels").replaceChildren();
     for (const pot of state.pots) {
       const node = card(`Pot ${pot.index} · (${pot.position.join(", ")})`);
-      paragraph(node, `${pot.ingredients} / 3 ingredients`);
+      paragraph(node, `${pot.ingredients} / ${pot.capacity ?? 3} ingredients`);
       paragraph(node, pot.status, true);
       get("pots").append(node);
       const label = document.createElement("span");
@@ -202,12 +208,15 @@
     render();
   }
   const meta = data.metadata;
+  if (meta.legend) get("legend").textContent = meta.legend;
+  if (meta.image_max_width) get("kitchen-wrap").style.maxWidth = `${meta.image_max_width}px`;
   document.title = `${meta.layout} — chef replay`;
   get("title").textContent = `${meta.layout} · ${meta.mode === "scripted" ? "Scripted reference" : `${meta.mode} policy`}`;
   get("subtitle").textContent = `Episode ${meta.episode + 1} · ${meta.mode === "scripted" ? meta.starts : `Test seed ${meta.seed}`} · ${last} steps`;
   get("perspective").textContent = meta.mode === "scripted"
     ? "Saved joint-action schedule from the original fixed starts; no learned policy."
     : `Full kitchen shown for viewers. Chefs receive ${meta.agent_view_size === null ? "full-kitchen" : `local ${2 * meta.agent_view_size + 1} × ${2 * meta.agent_view_size + 1}`} observations.`;
+  if (meta.perspective) get("perspective").textContent = meta.perspective;
   get("timeline").max = last;
   get("step-input").max = last;
   get("play").addEventListener("click", toggle);
@@ -215,6 +224,9 @@
   get("next").addEventListener("click", () => seek(current + 1));
   get("timeline").addEventListener("input", event => seek(event.target.value));
   get("step-input").addEventListener("focus", () => { pause(); render(); });
+  get("step-input").addEventListener("input", event => {
+    if (event.target.value !== "") seek(event.target.value);
+  });
   get("step-input").addEventListener("change", event => seek(event.target.value));
   get("speed").addEventListener("change", () => { if (playing) schedule(); });
   document.addEventListener("keydown", event => {

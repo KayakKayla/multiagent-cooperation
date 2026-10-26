@@ -1,0 +1,4 @@
+# Standalone CPU prototype checks; does not replace requirements.txt for PPO.
+jax==0.4.38
+numpy==1.26.4
+Pillow==11.3.0

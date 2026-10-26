@@ -1,5 +1,16 @@
 # OvercookedV2 training and setup
 
+## Local Overcooked! 2 scenario prototype
+
+`bash overcooked-v2/run.sh scenario --layout oc2_sushi_1_3` (from the repository
+root) runs a JAX-native grid prototype with chopping, movable pots, sushi assembly,
+and a finite dirty/clean plate cycle. A two-chef scripted check serves two dishes
+and reuses a washed plate, saving an offline replay. No training is launched.
+The commercial-game map and several timings remain provisional, and the PPO
+launcher is not yet connected to this scenario. Existing maps/JaxMARL stay unchanged.
+See [the scenario guide](scenarios/oc2_sushi_1_3/README.md) for CPU setup, actions,
+observations, assumptions, and checks.
+
 Source: [JaxMARL](https://github.com/bold-lab-ai/JaxMARL), tracked as a pinned Git submodule. Its commit is also recorded in `UPSTREAM_REVISION`.
 The upstream simulator and PPO algorithm are unchanged. Our scripts provide repeatable local checks and a saved baseline training launcher.
 
