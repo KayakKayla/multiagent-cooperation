@@ -20,7 +20,7 @@ namespace Sims.Overcooked2Bridge
                     throw new ArgumentException("Unknown field: " + key);
             var c = new Command { Op = Text(fields, "op"), RequestId = Text(fields, "request_id", false) };
             if (c.RequestId.Length > 64) throw new ArgumentException("request_id is too long");
-            if (c.Op == "state" || c.Op == "release") return c;
+            if (c.Op == "state" || c.Op == "geometry" || c.Op == "release") return c;
             if (c.Op != "move" && c.Op != "pickup") throw new ArgumentException("Unknown operation");
             c.SceneToken = Text(fields, "scene_token");
             c.ChefId = Integer(fields, "chef_id");

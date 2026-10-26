@@ -28,7 +28,7 @@ That PowerShell dispatch has not been executed on this Mac.
 The script needs no Steam game or model. Chef 0 supplies rice, chops, assembles,
 and serves; Chef 1 cooks, passes ingredients/pots, and washes plates. They use a
 shared counter to hand off items. The same plate is washed and reused for dish 2.
-The script completed **348 steps and two deliveries**, preserving all three pots
+The calibrated script completed **386 steps and two deliveries**, preserving all three pots
 and four plates and checking an independent ingredient ledger after every action.
 The fixed prototype reward was 40, not the commercial game's score.
 
@@ -66,19 +66,21 @@ for an initial scripted check; they are not a reproduction of commercial scoring
 
 ## Measured rules and open parameters
 
-Evidence comes from bridge v0.2.0 snapshots during manual play. The normalized
+Evidence comes from bridge v0.2.0 snapshots and a v0.3.0 continuous recording
+during manual play. The normalized
 observations and source assembly hash are recorded in
-[`reference_workflow.json`](reference_workflow.json). Raw game captures stay local;
+[`reference_workflow.json`](reference_workflow.json) and
+[`calibration_reference.json`](calibration_reference.json). Raw game captures stay local;
 the simulator does not require the Steam game or bridge implementation to run.
 
 | Rule | Current evidence | Needed before a fidelity claim |
 | --- | --- | --- |
-| Kitchen layout | World positions, station roles, and native grid coordinates are readable. The catalog is partial geometry. | Confirm walkable tiles, barriers, station reach, and spawn cells; do not assume every uncatalogued location is floor. |
-| Chopping | Tutorial lettuce had eight stages and progressed from 0 to 2/7. A manually prepared cucumber appeared in a plate as `Cucumber`. | Measure cucumber work duration and the raw-to-prepared object transition. Do not reuse the lettuce timing without checking. |
-| Cooking | A pot containing one rice ingredient advanced from 0 to about 4/12 and then `Cooked` at 12.55/12 game-time units. | Define seconds per simulator step and measure relevant pause/heat behavior. Wall-clock timing and burning have not been calibrated. |
+| Kitchen layout | Native/world station mapping verified: 1.2 world units per cell, origin (6, 7.2) in X/Z. Collider centers identify solid obstacles at (3,7) and (9,8), now blocked. | Full collision edges, boundary clearance, station reach and spawn cells remain approximate. |
+| Chopping | One uninterrupted cucumber changed from `Cucumber` to `ChoppedCucumber` on the same board. Sampled active-work bounds were about 1.30–1.50 seconds. | Repeat trials before claiming a precise duration; 1.4 seconds is a representative estimate, rounded to six simulator steps. |
+| Cooking | Required progress is 12 units; observed progress advanced at about one unit per native layer second until `Cooked`. | A 12-second rule is supported for this recipe. Interruptions, heat changes and burning need further checks. |
 | Pot transport | The same cooked pot retained contents and cooking state after moving from a hob to a counter. | Check placement/transfer failures and whether cooking stops immediately off heat. |
 | Assembly | The same plate held cucumber, a cooked-rice subtree, and seaweed; the emptied pot reset to zero. | Specify valid/invalid combinations and transfer rules explicitly. |
-| Plate cycle | Served plate disappeared, dirty stack returned, then manual washing produced a clean stack and empty plate. | Measure return delay, wash duration, stack counts, and washing interruption. |
+| Plate cycle | Configured wash is 3 seconds, supported by one observed wash. Dirty and clean stacks each contained one plate. Configured return delay is 10 seconds. | Pending-return telemetry failed during the recording; its backing-array fix needs a live check. Plate disappearance to dirty arrival was 9.5 seconds, which is not measured from delivery start. Stack behavior and wash interruption remain open. |
 | Orders and score | No order/score telemetry in the bridge. | Add telemetry or retain explicitly simplified prototype rules. |
 
 Unknown timing values may be configurable provisional parameters for development.
@@ -131,10 +133,13 @@ an unseen teammate's facing or inventory. Queued returning plates are off-map.
 ## Explicit provisional rules
 
 `Rules` configures durations and capacity. Defaults use 0.25 seconds per step,
-12 seconds of rice cooking, 1.75 seconds of chopping, 3 seconds of washing,
-5 seconds before plate return, 600 episode steps, and 32 item slots. Only the
-12-unit cooking requirement was read from the game; the step/time mapping and
-other durations are assumptions. Durations round up to whole steps.
+12 seconds of rice cooking, an estimated 1.4 seconds of chopping, 3 seconds of washing,
+10 seconds before plate return, 600 episode steps, and 32 item slots. Cooking and
+washing are supported by native configuration and one observed cycle. The return
+delay is configured in the game but its delivery-to-return interval was not fully
+verified. Chopping is one measured estimate; the 0.25-second action interval is
+still a modeling choice. Durations round up to whole steps (chopping becomes 1.5
+simulator seconds).
 
 Cooking advances only on a hob, retains progress off heat, and is capped at
 completion; **burning is not modeled**. Interrupted chopping/washing retains
@@ -145,9 +150,12 @@ without destroying plates or pots. The prawn dispenser is drawn but inactive.
 
 Station coordinates are transcribed from bridge-native grid indices, with
 column = X + 6 and row = 3 − Z. Outer walls, the extra bottom passage, the
-serving cell, and rounded chef starts are provisional. The rendered geometry
-has been checked for script reachability, not independently matched tile by tile
-to the real level. Validate it manually before a fidelity or transfer experiment.
+serving cell, and rounded chef starts remain partly provisional. Two collider-derived
+solid obstacles now replace incorrect floor cells. The lower passage at (3,8)
+remains floor: real off-center movement was observed there, although the real chef
+cannot necessarily stand on its nominal grid center with full clearance. This
+coarse grid cannot reproduce that passage's exact shape. Script reachability and
+recorded routes do not prove exhaustive tile-by-tile fidelity.
 
 ## Verification
 

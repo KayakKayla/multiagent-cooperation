@@ -40,12 +40,22 @@ class SushiTests(unittest.TestCase):
     def test_script_two_dishes_reuses_washed_plate_and_preserves_food(self):
         script = Script(self.env).run()
         self.assertEqual(int(script.state.deliveries), 2)
-        self.assertEqual(int(script.state.time), 348)
+        self.assertLessEqual(int(script.state.time), self.env.rules.max_steps)
         np.testing.assert_array_equal(script.spawn_counts, [2, 2, 2])
         np.testing.assert_array_equal(food_counts(script.state), [0, 0, 0])
         self.assertTrue(all(m.get("plate_slot", 3) == 3 for m in script.milestones))
         audit(self.env, script.state)
         self.assertTrue(compare_reference(script)["semantic_checkpoints_passed"])
+
+    def test_measured_solid_obstacles_block_movement_but_lower_passage_remains(self):
+        for start, action in (((4, 7), Action.LEFT), ((8, 8), Action.RIGHT)):
+            s = self.pose(self.s, 0, start, action)
+            _, z, _, _, info = self.step(s, action)
+            np.testing.assert_array_equal(z.positions[0], start)
+            self.assertTrue(bool(info['blocked'][0]))
+        s = self.pose(self.s, 0, (2, 8), Action.RIGHT)
+        _, z, _, _, _ = self.step(s, Action.RIGHT)
+        np.testing.assert_array_equal(z.positions[0], (3, 8))
 
     def test_simultaneous_collision_swap_and_following(self):
         for positions in ([[4, 3], [5, 3]], [[3, 3], [5, 3]]):

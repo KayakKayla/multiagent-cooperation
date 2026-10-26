@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "source": "Manual Story 1-3 recording, bridge v0.3.0, 2026-10-26 UTC",
+  "assembly_sha256": "8d548c632f48b07883e4e9861ddb834588f6edca9ff56920316daf5e33647159",
+  "raw_evidence": "overcooked2-bridge/outputs/calibration-level-1-3-session-1/ (local ignored artifacts)",
+  "samples_sha256": "c832b97e66b27f717ec1e9d3b6fa594c6a314bd7bdbfedb52fa226a084539e86",
+  "samples": 1875,
+  "sampling_interval_seconds": {
+    "count": 1874,
+    "min": 0.09503545799998392,
+    "median": 0.10000500000000123,
+    "p95": 0.10413204199999981,
+    "max": 0.10497091599999919
+  },
+  "configured": {
+    "rice_cooking_units": 12.0,
+    "wash_seconds_per_plate": 3.0,
+    "plate_return_seconds": 10.0
+  },
+  "observed": {
+    "cucumber_chop_active_seconds_sample_bounds": [
+      1.2998409271240234,
+      1.5014560222625732
+    ],
+    "chop_interrupted": false,
+    "chop_left_censored": false,
+    "chopped_prefab": "ChoppedCucumber",
+    "cook_native_units_per_layer_second": {
+      "count": 161,
+      "min": 0.188205162333051,
+      "median": 0.9998269151363554,
+      "p95": 1.0264481620722699,
+      "max": 1.1655264551733717
+    },
+    "wash_native_units_per_layer_second": {
+      "count": 29,
+      "min": 0.8816848184054977,
+      "median": 0.9986422723802013,
+      "p95": 1.028214890719088,
+      "max": 1.1372086060371367
+    },
+    "wash_elapsed_sample_bounds_seconds": [
+      2.8940670490264893,
+      3.10656201839447
+    ],
+    "dirty_plate_arrival_after_served_plate_disappearance_seconds": 9.5,
+    "dirty_plate_stack_count": 1,
+    "clean_plate_stack_count": 1
+  },
+  "simulator": {
+    "step_seconds": 0.25,
+    "chop_seconds_estimate": 1.4,
+    "chop_ticks": 6,
+    "cook_seconds": 12.0,
+    "cook_ticks": 48,
+    "wash_seconds": 3.0,
+    "wash_ticks": 12,
+    "return_seconds_from_config": 10.0,
+    "return_ticks": 40,
+    "new_solid_obstacle_cells": [
+      [
+        3,
+        7
+      ],
+      [
+        9,
+        8
+      ]
+    ],
+    "narrow_passage_cell_retained": [
+      3,
+      8
+    ]
+  },
+  "geometry": {
+    "native_world_spacing": 1.2,
+    "world_origin_native_zero": {
+      "x": 6.0,
+      "z": 7.2
+    },
+    "column_from_native_x_offset": 6,
+    "row_from_native_z_intercept": 3,
+    "solid_obstacle_bounds": [
+      {
+        "name": "Col_Objects (11)",
+        "center_xz": [
+          2.400002,
+          2.14999771
+        ],
+        "size_xz": [
+          1.19999886,
+          1.30000019
+        ]
+      },
+      {
+        "name": "Col_Objects (10)",
+        "center_xz": [
+          9.6,
+          0.949996948
+        ],
+        "size_xz": [
+          1.19999886,
+          1.30000043
+        ]
+      }
+    ],
+    "coverage": "Active collider bounds and observed chef trajectories; not an exhaustive physics/navigation proof"
+  },
+  "limitations": [
+    "One recipe cycle, not repeated timing trials.",
+    "Chopping estimate is quantized to 1.5 simulator seconds; sample bounds do not resolve between-sample input changes.",
+    "Pending plate timer reader failed for 100 samples while queue was nonempty; fixed to use the inspected FastList backing array, but fix requires a future live check.",
+    "Plate removal is delayed relative to delivery; 9.5 seconds is not the configured 10-second delivery-to-return interval.",
+    "Narrow passage at (3,8) requires off-center real movement; the coarse grid approximates clearance.",
+    "Complete walkability, collision edges, spawn rounding, interruptions, burning and scoring remain unverified."
+  ]
+}

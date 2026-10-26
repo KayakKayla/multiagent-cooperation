@@ -1,7 +1,8 @@
 """Station coordinates transcribed from the local Story 1-3 bridge snapshot.
 
-Grid column = native X + 6; row = 3 - native Z. The extra bottom passage,
-outer boundary, serving cell, and rounded spawns are provisional geometry.
+Grid column = native X + 6; row = 3 - native Z. Two extra solid obstacles
+were identified in collider captures. Some boundary/passage clearance, the
+serving cell, and rounded spawns remain approximate at this resolution.
 Unobserved geometry is declared here, not inferred as floor at runtime.
 """
 from enum import IntEnum
@@ -40,6 +41,9 @@ STATIONS = {
     (13, 3): Tile.CUCUMBER, (13, 4): Tile.COUNTER,
     (13, 5): Tile.COUNTER, (13, 6): Tile.COUNTER,
     (9, 7): Tile.DRYING, (10, 7): Tile.SINK, (11, 7): Tile.RETURN,
+    # Centers inside real wall colliders Col_Objects (11) and (10).
+    # Cell (3, 8) stays floor: a chef traversed the off-center lower passage.
+    (3, 7): Tile.WALL, (9, 8): Tile.WALL,
 }
 
 

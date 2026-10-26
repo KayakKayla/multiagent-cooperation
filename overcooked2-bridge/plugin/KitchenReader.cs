@@ -46,6 +46,14 @@ namespace Sims.Overcooked2Bridge
                     station_id = go.GetInstanceID(), name = go.name, scene = go.scene.name,
                     position = Position(go.transform.position), components = Components(go)
                 };
+                station.layer = go.layer;
+                Observe(warnings, "work activity " + station.station_id, () => {
+                    var interactable = go.GetComponent<ServerInteractable>();
+                    if (interactable != null) station.work = new WorkActivity { interactor_count = interactable.InteractorCount() };
+                });
+                Observe(warnings, "washing " + station.station_id, () => {
+                    station.washing = CalibrationReader.Washing(go);
+                });
                 var roles = new List<string>();
                 if (go.GetComponent<Workstation>() != null) roles.Add("chopping_board");
                 if (go.GetComponent<ServerPickupItemSpawner>() != null) roles.Add("dispenser");
@@ -105,6 +113,11 @@ namespace Sims.Overcooked2Bridge
             {
                 var item = new ItemSnapshot { item_id = go.GetInstanceID(), name = go.name,
                     scene = go.scene.name, position = Position(go.transform.position) };
+                item.layer = go.layer;
+                Observe(warnings, "plate stack " + item.item_id, () => {
+                    var stack = go.GetComponent<ServerPlateStackBase>();
+                    if (stack != null) item.plate_count = stack.GetSize();
+                });
                 int owner;
                 if (chefOwners.TryGetValue(item.item_id, out owner)) item.held_by_chef_id = owner;
                 if (stationOwners.TryGetValue(item.item_id, out owner)) item.station_id = owner;
@@ -136,6 +149,7 @@ namespace Sims.Overcooked2Bridge
                     var workable = go.GetComponent<WorkableItem>();
                     if (server != null && workable != null) item.chopping = new ChopProgress {
                         completion_fraction = KitchenValues.Finite(server.GetProgress()), stages = workable.m_stages,
+                        chops_per_stage = CalibrationReader.Read<int>(server, "m_chopsPerSlice"),
                         next_prefab = workable.m_nextPrefab == null ? null : workable.m_nextPrefab.name
                     };
                 });
@@ -155,7 +169,9 @@ namespace Sims.Overcooked2Bridge
                 });
                 items.Add(item);
             }
-            return new KitchenSnapshot { available = stations.Count > 0 || items.Count > 0,
+            PlateReturnSnapshot plateReturn = null;
+            Observe(warnings, "plate return timing", () => { plateReturn = CalibrationReader.PlateReturn(); });
+            return new KitchenSnapshot { available = stations.Count > 0 || items.Count > 0, plate_return = plateReturn,
                 stations = stations.ToArray(), items = items.ToArray(), warnings = warnings.ToArray() };
         }
 

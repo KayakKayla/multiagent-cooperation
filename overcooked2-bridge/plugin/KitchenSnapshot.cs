@@ -11,6 +11,7 @@ namespace Sims.Overcooked2Bridge
         public StationSnapshot[] stations = new StationSnapshot[0];
         public ItemSnapshot[] items = new ItemSnapshot[0];
         public string[] warnings = new string[0];
+        public PlateReturnSnapshot plate_return;
     }
     [Serializable] public class Point3
     {
@@ -31,6 +32,9 @@ namespace Sims.Overcooked2Bridge
         public int? item_id, plate_count;
         public string cooking_station_type;
         public ItemDefinition dispenses;
+        public int layer;
+        public WorkActivity work;
+        public WashProgress washing;
     }
     [Serializable] public class ItemDefinition
     {
@@ -47,6 +51,8 @@ namespace Sims.Overcooked2Bridge
         public string location;
         public int? held_by_chef_id, station_id;
         public bool contents_known;
+        public int layer;
+        public int? plate_count;
         public RecipeNode[] contents = new RecipeNode[0];
         public RecipeNode composition;
         public ChopProgress chopping;
@@ -63,7 +69,30 @@ namespace Sims.Overcooked2Bridge
     {
         public float? completion_fraction;
         public int stages;
+        public int? chops_per_stage;
         public string next_prefab;
+    }
+    [Serializable] public class WorkActivity
+    {
+        public int interactor_count;
+    }
+    [Serializable] public class WashProgress
+    {
+        public float? elapsed, required, completion_fraction;
+        public int? plate_count;
+        public int interactor_count;
+        public string units = "station_layer_game_seconds";
+    }
+    [Serializable] public class PlateReturnSnapshot
+    {
+        public float? configured_seconds;
+        public PendingPlateReturn[] pending = new PendingPlateReturn[0];
+        public string units = "layer_0_game_seconds";
+    }
+    [Serializable] public class PendingPlateReturn
+    {
+        public int? station_id;
+        public float? remaining_seconds;
     }
     [Serializable] public class CookProgress
     {

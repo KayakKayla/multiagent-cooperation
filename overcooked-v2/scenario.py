@@ -44,8 +44,9 @@ def main():
                    reused_plate_slot=3, invariants_passed_each_step=True,
                    food_spawn_counts=script.spawn_counts.tolist(),
                    rules=asdict(env.rules),
-                   provisional=["walkable geometry and spawn rounding", "step duration", "chopping and washing durations",
-                                "plate return delay", "one-slot return/sink/drying capacities", "fixed order and reward",
+                   provisional=["remaining geometry, narrow-passage clearance and spawn rounding", "step duration",
+                                "chopping estimate from one recording; plate-return duration configured but not fully timed",
+                                "one-slot return/sink/drying capacities", "fixed order and reward",
                                 "no burning; cooking progress is capped and retained off heat"],
                    milestones=script.milestones)
     summary["real_game_reference_comparison"] = comparison
@@ -54,6 +55,9 @@ def main():
                                 for p in sorted(sources.glob("*.py"))}
     summary["source_sha256"]["reference_workflow.json"] = hashlib.sha256(
         (sources / "reference_workflow.json").read_bytes()).hexdigest()
+    summary["calibration_reference"] = json.loads((sources / "calibration_reference.json").read_text())
+    summary["source_sha256"]["calibration_reference.json"] = hashlib.sha256(
+        (sources / "calibration_reference.json").read_bytes()).hexdigest()
     (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(f"PASS: {summary['steps']} steps, {summary['deliveries']} deliveries; same plate washed and reused.")
     print("Replay:", (output / "replay.html").resolve())

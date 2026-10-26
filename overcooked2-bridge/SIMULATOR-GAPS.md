@@ -5,6 +5,12 @@ observed on 2026-10-25 with bridge v0.2.0. All preparation in this level was
 performed by the user; the bridge only read state. It does not establish policy
 transfer or identify every mechanic in Overcooked! 2.
 
+This preserves the initial v0.2.0 audit. A later v0.3.0 recording adds washing
+progress, one-plate stack counts, a chopped-item replacement, timing estimates,
+and collider observations; see [`CALIBRATION.md`](CALIBRATION.md) for the updated
+findings and unresolved gaps. The table below compares the pinned upstream
+simulator rather than the locally extended prototype.
+
 The comparison below describes the pinned upstream simulator. The separate
 [`oc2_sushi_1_3` prototype](../overcooked-v2/scenarios/oc2_sushi_1_3/README.md)
 implements several observed mechanics locally; its geometry and timing still
