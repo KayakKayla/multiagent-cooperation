@@ -3,8 +3,13 @@
 This small bridge reads chef state and sends short movement/pickup commands to the
 installed commercial Steam game on macOS. No model is trained by these commands.
 
-Version 0.2.0 adds a read-only kitchen catalog to `state`. The original four
-operations and their control limits remain the same.
+Version 0.2.0 adds a read-only kitchen catalog to `state`. Version 0.3.0 adds
+calibration clocks, work/washing telemetry, plate-return timing, and a read-only
+`geometry` operation. Movement/pickup commands retain their original limits.
+The first recording and resulting simulator changes are documented in
+[`CALIBRATION.md`](CALIBRATION.md), including a pending-return read failure and
+the remaining geometry/timing limits. Its v0.3.0 findings supersede the initial
+v0.2.0 measurement gaps described below.
 
 ## Verified on this Mac (2026-10-25)
 
@@ -21,7 +26,7 @@ user preparing each position. The interactive wizard itself was not run end to e
 The local [acceptance summary](outputs/live-acceptance/summary.json) and
 [exchange log](outputs/live-acceptance/events.jsonl) contain exact state/command
 evidence. They are generated, ignored artifacts. Current offline checks passed:
-75 C# assertions and eight Python tests. This establishes local control of this game build;
+80 C# assertions and 18 Python tests. This establishes local control of this game build;
 trained-policy transfer, training throughput, and other platforms remain untested.
 
 ## Checkpoint 1: load the plugin
@@ -161,6 +166,58 @@ On a cooking level, put ingredients into a pot/pan and compare its contents and
 cooking progress across two reads. These are observational checks; perform all
 game interactions yourself.
 
+## Continuous level 1-3 calibration
+
+After installing v0.3.0, restart through Steam and load Story 1-3. First record a
+short paused preflight to check warnings, request latency, and `unity_capture_ms`.
+The recorder targets 0.1-second intervals; inspect the achieved interval statistics
+rather than assuming 10 Hz was sustained. Each request finishes before the next
+begins. Slow reads create visible gaps rather than concurrent/catch-up requests.
+
+```bash
+python3 calibration.py record --seconds 600 --output outputs/calibration-session
+# After recording, the same evidence can be analyzed again without the game:
+python3 calibration.py analyze outputs/calibration-session
+```
+
+The recorder sends only `state` and, once per loaded scene token, `geometry`.
+It writes flushed `samples.jsonl`, semantic `events.jsonl`, one geometry JSON per
+scene, source/version/hash metadata, a small `status.json`, and a final summary.
+Use a fresh output directory each time. Ctrl-C or creating an empty `STOP` file
+inside that directory ends recording; disconnect errors preserve completed
+samples and stop without reconnecting. Generated evidence remains ignored.
+
+Resume and prepare cucumber sushi, serve it, and wash one returned plate. Normal
+walking and mistakes are allowed. Try to complete one chop and one wash without
+interruption. Pause when finished. There is no need to pause after every action.
+
+Additional state fields used for calibration:
+
+- `layer_game_seconds`: 32 per-layer clocks accumulated once per Unity update
+  using the game's `TimeManager.GetDeltaTime(layer)`, reset on scene-token change.
+  Compare a component with its own `layer` clock; wall-clock time includes pauses.
+- `capture_ms`: Unity main-thread state-capture cost, excluding JSON serialization
+  and socket transfer. Host request latency includes those additional costs.
+- Station `work.interactor_count`; `washing` includes the configured per-plate
+  duration, elapsed cleaning timer, pending plate count, and interactor count.
+- Movable stack item `plate_count`, raw ingredient `chops_per_stage`, and kitchen
+  `plate_return` configured duration plus pending return destinations/countdowns.
+
+Exact private server fields were inspected in the installed assemblies before
+adding read-only reflection. Missing fields produce warnings; no reflected field
+is changed. Timing-rate analysis excludes pauses, large sampling gaps, resets,
+scene changes, and washing with multiple workers. Chop replacement is accepted
+only when the same board explicitly contains the expected next prefab. Duration
+bounds flag interruptions, gaps, multiple workers, and recording that began after
+work started. They cannot exclude an unobserved stop/start between samples.
+
+`geometry` returns active collider world-space bounds, types, layers, trigger
+flags, and dynamic-body flags. **Bounds are not exact collision shapes or proof
+of walkability.** Chef trajectories verify observed routes; unvisited tiles and
+ambiguous bounds require additional inspection before the simulator map changes.
+Configured timing values also need comparison with observed behavior. Recorder
+tests/builds do not establish that live calibration has passed.
+
 ## Movement and pickup checks
 
 For the first movement check, place the selected chef on clear stationary floor
@@ -218,6 +275,7 @@ later `state` request to observe its effects.
 | Operation | Fields in addition to `op` and optional string `request_id` |
 | --- | --- |
 | `state` | none |
+| `geometry` | none; read-only collider catalog plus ordinary state |
 | `move` | `scene_token`, integer `chef_id`, numeric `x`/`y`, integer `duration_ms` (1–500) |
 | `pickup` | `scene_token`, integer `chef_id` |
 | `release` | none; releases the current automated input |
@@ -252,11 +310,13 @@ bash test.sh
 ```
 
 The C# harness compiles the actual protocol, JSON writer, transport, and deadline
-gate sources against the local SDK. It tests malformed messages, duplicate fields,
+gate and kitchen DTO sources against the local SDK. It tests malformed messages, duplicate fields,
 numeric bounds, framing, nested state serialization, timeouts, reconnection, and
 real socket disconnects. Python checks response correlation, report metadata,
 incomplete replies, and the absence of pickup retries. These run without the game;
 they do not replace the live acceptance checks above.
+Recorder checks also cover pause/scene boundaries, sampling gaps, explicit chopped
+replacement, interrupted files, disconnect preservation, and read-only requests.
 
 ## Remove the test
 

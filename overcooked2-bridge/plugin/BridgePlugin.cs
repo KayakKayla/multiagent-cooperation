@@ -10,15 +10,16 @@ using Team17.Online;
 
 namespace Sims.Overcooked2Bridge
 {
-    [BepInPlugin("ca.waterloo.sims.overcooked2bridge", "Sims Overcooked2 Bridge", "0.2.0")]
+    [BepInPlugin("ca.waterloo.sims.overcooked2bridge", "Sims Overcooked2 Bridge", "0.3.0")]
     public class BridgePlugin : BaseUnityPlugin
     {
-        public const string Version = "0.2.0";
+        public const string Version = "0.3.0";
         Transport transport;
         string sceneToken = Guid.NewGuid().ToString("N");
         string assemblyHash;
         ActiveInput active;
         bool previousRunInBackground;
+        readonly double[] layerSeconds = new double[32];
 
         private void Awake()
         {
@@ -50,12 +51,17 @@ namespace Sims.Overcooked2Bridge
         {
             EndInput("scene_changed");
             sceneToken = Guid.NewGuid().ToString("N");
+            Array.Clear(layerSeconds, 0, layerSeconds.Length);
         }
 
         void Update()
         {
             try
             {
+                // The game's timers advance using TimeManager per-layer deltas.
+                // Accumulate every frame, rather than assuming wall time == game time.
+                for (int layer = 0; layer < layerSeconds.Length; layer++)
+                    layerSeconds[layer] += TimeManager.GetDeltaTime(layer);
                 if (active != null && !InputAllowed(active)) EndInput("completed_or_canceled");
                 Pending pending;
                 // One client, one outstanding request; cap work per Unity frame.
@@ -81,6 +87,7 @@ namespace Sims.Overcooked2Bridge
                 Command command = Command.Parse(pending.Line);
                 reply.request_id = command.RequestId;
                 if (command.Op == "release") EndInput("release");
+                else if (command.Op == "geometry") reply.geometry = GeometryReader.Capture();
                 else if (command.Op != "state")
                 {
                     if (command.SceneToken != sceneToken) return Fail(reply, "stale_scene", "Read state again after a scene change.");
@@ -151,6 +158,7 @@ namespace Sims.Overcooked2Bridge
         }
         Snapshot Capture()
         {
+            double started = Now();
             var chefs = new List<ChefState>();
             PlayerControls[] players = FindChefs();
             foreach (PlayerControls chef in players)
@@ -170,8 +178,9 @@ namespace Sims.Overcooked2Bridge
                     position = new Vec(chef.transform.position), facing = new Vec(chef.transform.forward),
                     selected = chef.GetDirectlyUnderPlayerControl(), can_control = CanControl(chef), held = held
                 });
+                chefs[chefs.Count - 1].layer = chef.gameObject.layer;
             }
-            return new Snapshot {
+            var snapshot = new Snapshot {
                 scene = SceneManager.GetActiveScene().name, scene_token = sceneToken,
                 frame = Time.frameCount, monotonic_seconds = Now(),
                 paused = Paused(), in_round = InRound(), local_single_player = LocalSession(),
@@ -179,6 +188,9 @@ namespace Sims.Overcooked2Bridge
                 active_chef_id = active == null ? 0 : active.ChefId, chefs = chefs.ToArray(),
                 kitchen = KitchenReader.Capture(players)
             };
+            snapshot.layer_game_seconds = (double[])layerSeconds.Clone();
+            snapshot.capture_ms = (Now() - started) * 1000;
+            return snapshot;
         }
         void EndInput(string reason)
         {
@@ -265,6 +277,7 @@ namespace Sims.Overcooked2Bridge
         public bool ok;
         public string request_id = "", error = "", message = "", plugin_version, assembly_sha256;
         public Snapshot before, state;
+        public GeometrySnapshot geometry;
     }
     [Serializable] public class Snapshot
     {
@@ -274,10 +287,13 @@ namespace Sims.Overcooked2Bridge
         public bool paused, in_round, local_single_player, input_active;
         public ChefState[] chefs;
         public KitchenSnapshot kitchen;
+        public double[] layer_game_seconds;
+        public double capture_ms;
     }
     [Serializable] public class ChefState
     {
         public int chef_id;
+        public int layer;
         public string name, player_id;
         public Vec position, facing;
         public bool selected, can_control;

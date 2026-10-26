@@ -9,6 +9,8 @@ class CoreTests
 {
     public class Nested { public string name = "chef\n\"1\""; public int[] ids = { 1, -2 }; }
     public class StateReply { public bool ok = true; public Nested state = new Nested(); public string before = null; }
+    public class QueueBase { private float seconds = 10; public float Touch() { return seconds; } }
+    public class QueueWithoutIndexer : QueueBase { public object[] _items = { "plate" }; public int Count { get { return 1; } } }
     static int checks;
     static void Check(bool condition, string message)
     {
@@ -57,6 +59,12 @@ class CoreTests
         Check(encoded == "{\"ok\":true,\"state\":{\"name\":\"chef\\u000a\\\"1\\\"\",\"ids\":[1,-2]},\"before\":null}", "nested state JSON is preserved");
         System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("fr-FR");
         Check(JsonOutput.Write(new double[] { 1.25, -3.5 }) == "[1.25,-3.5]", "JSON numbers independent of system locale");
+        var nativeQueue = new QueueWithoutIndexer();
+        Check(nativeQueue.GetType().GetProperty("Item") == null, "native queue fixture deliberately lacks an indexer");
+        Check((string)FieldRead.ArrayEntry(nativeQueue, "_items", 0) == "plate", "plate return reads backing array without an Item property");
+        Check(FieldRead.Value<float>(nativeQueue, "seconds") == 10, "private inherited settings field can be read");
+        try { FieldRead.Value<int>(nativeQueue, "missing"); throw new Exception("Accepted missing reflected field"); }
+        catch (MissingFieldException) { checks++; }
         Check(KitchenValues.Completion(5, 10) == 0.5f, "cooking completion fraction");
         Check(KitchenValues.Completion(15, 10) == 1, "completion bounded while raw elapsed preserves overcooking");
         Check(KitchenValues.Completion(-1, 10) == 0, "negative completion bounded");
@@ -83,6 +91,7 @@ class CoreTests
         Check(kitchenJson.Split(new[] { "\"definition_id\":123" }, StringSplitOptions.None).Length == 3, "repeated ingredients preserved");
         Check(kitchenJson.Contains("\"station_id\":7") && kitchenJson.Contains("\"item_id\":9"), "kitchen JSON preserves linked station/item identities");
         Check(Command.Parse("{\"op\":\"state\"}").Op == "state", "state");
+        Check(Command.Parse("{\"op\":\"geometry\"}").Op == "geometry", "read-only geometry needs no chef or scene token");
         Check(Command.Parse("{\"op\":\"release\"}").Op == "release", "release");
         Check(Command.Parse(Move("1")).DurationMs == 1, "minimum duration");
         Check(Command.Parse(Move("500")).DurationMs == 500, "maximum duration");

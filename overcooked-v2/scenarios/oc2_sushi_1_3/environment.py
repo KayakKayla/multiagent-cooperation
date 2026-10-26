@@ -45,12 +45,12 @@ DIRECTIONS = jnp.array(((1, 0), (0, 1), (-1, 0), (0, -1)), dtype=jnp.int32)
 
 @dataclass(frozen=True)
 class Rules:
-    # Only rice's required cooking time was read from the actual game.
+    # See calibration_reference.json for measurements and remaining uncertainty.
     step_seconds: float = 0.25
     cook_seconds: float = 12.0
-    chop_seconds: float = 1.75
+    chop_seconds: float = 1.4
     wash_seconds: float = 3.0
-    return_seconds: float = 5.0
+    return_seconds: float = 10.0
     delivery_reward: float = 20.0
     max_steps: int = 600
     capacity: int = 32
