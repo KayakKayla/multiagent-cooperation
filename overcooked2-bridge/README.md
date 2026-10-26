@@ -3,6 +3,9 @@
 This small bridge reads chef state and sends short movement/pickup commands to the
 installed commercial Steam game on macOS. No model is trained by these commands.
 
+Version 0.2.0 adds a read-only kitchen catalog to `state`. The original four
+operations and their control limits remain the same.
+
 ## Verified on this Mac (2026-10-25)
 
 The Steam/BepInEx launch, Python connection, and live chef state passed in the
@@ -17,8 +20,8 @@ user preparing each position. The interactive wizard itself was not run end to e
 
 The local [acceptance summary](outputs/live-acceptance/summary.json) and
 [exchange log](outputs/live-acceptance/events.jsonl) contain exact state/command
-evidence. They are generated, ignored artifacts. Offline checks passed: 58 C#
-assertions and six Python tests. This establishes local control of this game build;
+evidence. They are generated, ignored artifacts. Current offline checks passed:
+75 C# assertions and eight Python tests. This establishes local control of this game build;
 trained-policy transfer, training throughput, and other platforms remain untested.
 
 ## Checkpoint 1: load the plugin
@@ -73,6 +76,92 @@ readiness, and held-object identity. Chef IDs/tokens must be read again after
 loading/restarting a level. The bridge also reports whether the game is paused
 and in a round. `can_control` requires the game window to have focus; state reads
 still work while the game is in the background.
+
+## Read-only kitchen snapshot
+
+```bash
+python3 client.py state
+python3 client.py state --json > kitchen.json
+```
+
+`state` prints station/item summaries. `--json` writes the complete response,
+including game-assembly hash and plugin version, to stdout; the report location
+goes to stderr so redirected output stays valid JSON. The response remains
+available in the usual local report as well. Reads work with a loaded, paused
+game in the background; no movement, pickup, or other interaction is sent.
+
+The additive `state.kitchen` object has `schema_version: 1`, `available`,
+`coverage: "supported_components"`, `stations`, `items`, and `warnings`:
+
+| Data | Meaning |
+| --- | --- |
+| Station identity and position | GameObject instance ID, scene, world-space position, and attach point when present. Native grid coordinates and grid-manager ID are included when available. |
+| Station roles | Derived from actual components: dispenser, chopping board, cooking/heated station, serving station, plate stack/return, washing station, disposal, conveyor, or attachment surface. Component names accompany them. Unclassified grid markers retain the `grid_location` role. |
+| Dispenser and surface contents | The current dispenser prefab name/static ingredient definition, attached item ID, and plate-stack size when available. |
+| Item identity and ownership | Physical item instance ID/name, world position, held-by-chef ID or station ID, and attachment state. This includes held and placed items as well as unattached objects. |
+| Ingredients | Live container contents and assembled recipe definitions, preserving repeated ingredients. Definition names/IDs come from this game build. |
+| Chopping | Native completion fraction, stage count, and next prefab for items with a workable component. A fully chopped ingredient may replace the old object with a new ID and no chopping component. |
+| Cooking | Raw accumulated/required game cooking time, completion fraction clamped to 0–1, native state, required station type, and native cooked/burning flags. Cooking speed may differ from wall-clock time. |
+
+IDs are valid only in the accompanying `scene_token`. Station `item_id` references
+an entry in `items`; item `held_by_chef_id` references the existing `chefs` array.
+Items are labeled `held`, `station`, `unattached`, or `attached_unknown` from
+explicit game ownership/getters. Conflicting chef/station ownership is marked
+`ambiguous` with a warning. No nearest-counter guess is used.
+
+Unavailable optional fields are `null`. `contents_known: false` means contents
+were unavailable, rather than an empty container. `warnings` reports failed reads
+from individual components; other entries remain available. Recipe nesting has
+a depth limit of eight and reports truncation. Responses are bounded at 4 MiB in
+the client; incoming command limits remain 8192 bytes.
+
+This is a catalog of supported active game objects, **not a complete geometry or
+walkability map**. Decoration, walls/floor collision meshes, order queues, rewards,
+and unsupported mechanisms are not reconstructed. Native grid coordinates are
+not converted into OvercookedV2 cells, and partial-observation masking is not
+applied. Absent progress components do not imply an item is raw or finished.
+
+The tutorial live check found 30 station objects, all three ingredient dispensers,
+stable paused reads, explicit chef/item ownership, and partial chopping progress
+(lettuce 2/7 and tomato 6/7). A tracked lettuce changed from held by Chef 2 at
+zero progress to attached to a chopping board at 2/7 progress with the same item ID.
+Evidence is saved locally in
+[`outputs/kitchen-snapshot/`](outputs/kitchen-snapshot/). Raw tutorial vegetables
+expose a prefab name and workable progress but no assembled ingredient definition.
+Plates inside a stack may be `attached_unknown`; the tutorial rubbish bin currently
+appears as an attachment surface with its native `RubbishBin` component listed.
+The tutorial timer expired before the prepared lettuce/nonempty plate check.
+A subsequent Story 1-3 check verified a manually chopped cucumber on a plate:
+both container contents and assembled composition report one `Cucumber` ingredient,
+and the plate links to its counter. This definition has no separate chopped flag.
+Story 1-3 evidence is saved locally in [`outputs/level-1-3/`](outputs/level-1-3/).
+Story 1-3 also verified rice cooking from 0 to about 4/12 and then `Cooked` at
+12.55/12 game-time units, retaining its pot identity when moved from hob to
+counter. The completed plate reported cucumber, cooked rice, and seaweed, while
+the emptied pot reset to zero progress. Prepared-item replacement IDs, burning,
+and washing progress remain unverified live. After manual serving, the sushi
+plate disappeared and a `DirtyPlateStack` appeared at the plate-return station;
+after washing, it was replaced by a `CleanPlateStack` and a fresh empty plate at
+the drying area. This verifies the observed plate cycle, not exact washing
+progress, stack counts, correct-order acceptance, or delivery reward.
+
+See [`SIMULATOR-GAPS.md`](SIMULATOR-GAPS.md) for the resulting comparison with
+the pinned simulator and the remaining measurement gaps. Story 1-3 checks used
+manual controls and read-only bridge requests; they do not verify automated
+placing/chopping/washing or independent two-chef control.
+
+### Manual snapshot checks
+
+Load and pause a level, then read two snapshots to compare stable station IDs,
+positions, and item ownership. Manually pick up an ingredient, place it on a
+chopping board, and chop briefly, pausing between reads. Check that ownership
+links and progress follow the actual item. When it is fully chopped, check the
+replacement item's name/definition and ID rather than assuming the old ID persists.
+On a cooking level, put ingredients into a pot/pan and compare its contents and
+cooking progress across two reads. These are observational checks; perform all
+game interactions yourself.
+
+## Movement and pickup checks
 
 For the first movement check, place the selected chef on clear stationary floor
 and release your keys. Substitute the ID and token printed by `state`:
