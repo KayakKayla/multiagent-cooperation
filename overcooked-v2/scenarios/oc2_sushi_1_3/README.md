@@ -35,7 +35,10 @@ The fixed prototype reward was 40, not the commercial game's score.
 Outputs under `outputs/scenarios/` include `replay.html`, `initial.png`,
 `assembled.png`, `final.png`, `trace.json` (every action, event, and state), and `summary.json`
 (rules, assumptions, resource counts, and milestones). The replay opens offline
-and supports pause, seeking, exact stepping, and item inspection. Use
+and uses the shared illustrated viewer, with pause, seeking, exact stepping, item
+inspection, and an **Illustrated / Original** comparison toggle. Carried pots,
+partial plates, chopping/washing progress, and dirty/clean plate states are shown
+from recorded data. GIF/PNG output keeps the original rendering. Use
 `--output PATH` to choose a directory; that directory's generated files are replaced.
 
 The user selected a new scenario in this repository, based on the commercial

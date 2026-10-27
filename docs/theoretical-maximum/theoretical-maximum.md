@@ -129,6 +129,12 @@ drag the timeline backward or forward, or inspect individual steps. It contains 
 401 states and shows chef 0/red and chef 1/blue with their positions, facing,
 inventories, and the actions that produced the displayed state. The replay works offline.
 
+The replay now uses the shared illustrated viewer, with chef and kitchen sprites,
+delivery jumps, and an **Illustrated / Original** comparison toggle. Recorded
+states, actions, scores, and original frames are preserved. The
+[original draft link](media/18-soups-ui/replay.html) also uses the shared viewer.
+[Design notes and rebuild instructions](ui-draft/README.md).
+
 ![Verified 18-soup scripted replay](media/18-soups/rollout.gif)
 
 [Open the GIF](media/18-soups/rollout.gif). It shows the original fixed starts, both chefs' actions and inventories, pot status, deliveries, and shared score. It is a saved-action replay, not a learned policy or a proven optimal policy. The final frame shows 18 correct soups, no wrong deliveries, and 360 reward.

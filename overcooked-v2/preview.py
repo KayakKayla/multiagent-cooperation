@@ -15,6 +15,7 @@ from jaxmarl.environments.overcooked_v2.common import (
     StaticObject,
 )
 from jaxmarl.viz.overcooked_v2_visualizer import OvercookedV2Visualizer
+from jaxmarl.environments.overcooked_v2.settings import POT_COOK_TIME
 from replay import save_replay
 
 
@@ -101,6 +102,7 @@ def build_replay_data(states, actions, rewards, correct, wrong, config, mode, se
             "frame_stride": 1, "frame_ms": 100,
             "reward": "shared raw environment reward counted once; no shaping",
             "coordinates": "(column, row), zero-based",
+            "renderer": {"kind": "overcooked", "cook_ticks": int(POT_COOK_TIME)},
         },
         "steps": steps,
     }
