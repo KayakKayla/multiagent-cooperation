@@ -12,9 +12,8 @@ from flax.linen.initializers import constant, orthogonal
 from flax.training.train_state import TrainState
 from omegaconf import OmegaConf
 
-import jaxmarl
 import wandb
-from jaxmarl.wrappers.baselines import OvercookedV2LogWrapper
+from scenarios import make_env, wrap_training
 
 
 class ScannedRNN(nn.Module):
@@ -218,7 +217,7 @@ def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
 
 
 def make_trainer(config):
-    env = jaxmarl.make(config["ENV_NAME"], **config["ENV_KWARGS"])
+    env = make_env(env_name=config["ENV_NAME"], **config["ENV_KWARGS"])
 
     config["NUM_ACTORS"] = env.num_agents * config["NUM_ENVS"]
     config["NUM_UPDATES"] = (
@@ -228,7 +227,7 @@ def make_trainer(config):
         config["NUM_ACTORS"] * config["NUM_STEPS"] // config["NUM_MINIBATCHES"]
     )
 
-    env = OvercookedV2LogWrapper(env, replace_info=False)
+    env = wrap_training(env)
 
     def create_learning_rate_fn():
         base_learning_rate = config["LR"]

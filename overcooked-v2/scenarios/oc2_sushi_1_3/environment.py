@@ -109,6 +109,7 @@ class SushiEnvironment:
 
     def __init__(self, rules=None, agent_view_size=None):
         self.rules = rules or Rules()
+        self.max_steps = self.rules.max_steps
         if agent_view_size is not None and (not isinstance(agent_view_size, int) or agent_view_size < 0):
             raise ValueError("agent_view_size must be None or a nonnegative integer")
         self.agent_view_size = agent_view_size
@@ -131,7 +132,7 @@ class SushiEnvironment:
     def action_space(self, agent):
         return Discrete(self.num_actions)
 
-    def observation_space(self, agent):
+    def observation_space(self, agent=None):
         return Box(self.obs_shape)
 
     def get_avail_actions(self, state):

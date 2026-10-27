@@ -15,6 +15,7 @@ from pathlib import Path
 from omegaconf import OmegaConf
 
 import checkpoint as ckpt
+from scenarios import make_env
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG = SCRIPT_DIR / "configs/coord_ring.yaml"
@@ -208,7 +209,7 @@ def run(args, config, run_dir, resume_path) -> None:
     module = load_algorithm(config["ALGORITHM"])
 
     # Constructing the environment checks settings without playing any games.
-    env = module.jaxmarl.make(config["ENV_NAME"], **config["ENV_KWARGS"])
+    env = make_env(env_name=config["ENV_NAME"], **config["ENV_KWARGS"])
     updates = config["TOTAL_TIMESTEPS"] // (config["NUM_ENVS"] * config["NUM_STEPS"])
     # Fail early if settings would produce no updates or an invalid batch reshape.
     if updates < 1:

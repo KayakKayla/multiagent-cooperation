@@ -6,13 +6,39 @@
 root) runs a JAX-native grid prototype with chopping, movable pots, sushi assembly,
 and a finite dirty/clean plate cycle. A two-chef scripted check serves two dishes
 and reuses a washed plate, saving an offline replay. No training is launched.
-The commercial-game map and several timings remain provisional, and the PPO
-launcher is not yet connected to this scenario. Existing maps/JaxMARL stay unchanged.
+The commercial-game map and several timings remain provisional. The PPO launcher
+also accepts this scenario; the small check below verifies the hookup. Existing
+maps/JaxMARL stay unchanged.
 See [the scenario guide](scenarios/oc2_sushi_1_3/README.md) for CPU setup, actions,
 observations, assumptions, and checks.
 
+### Tiny sushi PPO check
+
+With the full PPO dependencies installed, run from `overcooked-v2/`:
+
+```bash
+JAX_PLATFORMS=cpu .venv/bin/python train.py --config configs/oc2_sushi_check.yaml
+JAX_PLATFORMS=cpu .venv/bin/python evaluate.py --run outputs/train/<printed-run-folder> --episodes 1
+```
+
+For CPU installation, use the PPO versions in `requirements.txt` with
+`jax==0.4.38` instead of the CUDA extra, plus Pillow from
+`requirements-scenario-cpu.txt`. The standalone scenario dependencies alone are
+insufficient for PPO. Existing GPU setup and launch commands are unchanged.
+
+The check runs two kitchens for two updates: **32 environment steps**, with
+eight-step episodes to exercise resets. It uses a smaller recurrent/dense size,
+the existing CNN/PPO code, and zero added reward shaping. Checkpoints, reload
+verification, and evaluation outputs use the standard paths. This budget cannot
+produce a useful policy; the check config is not a research baseline. The first
+CPU run took about 20 seconds including compilation, saved/reloaded its weights,
+and produced an eight-step evaluation replay with zero deliveries.
+Full-state checkpoint resumes still require identical algorithm source; older
+checkpoints need their original code revision to resume.
+
 Source: [JaxMARL](https://github.com/bold-lab-ai/JaxMARL), tracked as a pinned Git submodule. Its commit is also recorded in `UPSTREAM_REVISION`.
-The upstream simulator and PPO algorithm are unchanged. Our scripts provide repeatable local checks and a saved baseline training launcher.
+The pinned upstream simulator is unchanged. Our trainer preserves the PPO update
+math and adds local setup and checkpointing.
 
 ## Training options
 

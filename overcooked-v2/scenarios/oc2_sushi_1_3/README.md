@@ -162,12 +162,15 @@ recorded routes do not prove exhaustive tile-by-tile fidelity.
 
 ## Verification
 
-Fifteen focused tests cover scripted reuse/conservation, invalid transfers,
+Sixteen focused tests cover scripted reuse/conservation, invalid transfers,
 simultaneous collisions and pickup, work limits, cooking on/off heat, blocked
 return/drying stations, finite item capacity, episode termination/autoreset,
 observation masking, and JAX JIT/batching. Five existing replay regressions and
 an original `coord_ring` reset/step passed on CPU. Browser playback, seeking,
-and backward/forward stepping were checked. No PPO updates were run.
+and backward/forward stepping were checked. Three PPO-interface tests additionally
+cover terminal reward/reset logging, legacy wrapper selection, and policy replay.
+The [tiny PPO check](../../README.md#tiny-sushi-ppo-check) runs two updates and
+verifies checkpoint reload and frozen-policy evaluation; it is not useful training.
 
 The script compares normalized checkpoints with the tracked
 [`reference_workflow.json`](reference_workflow.json), derived from the manual
@@ -183,7 +186,7 @@ Generated summaries include source hashes and the reference comparison's scope.
    when revising mechanics or timing.
 4. Compare semantic milestones with the real-game trace, normalizing object IDs
    and coordinates rather than expecting the commercial game's IDs in the simulator.
-5. Integrate the new observation/action schema and metrics into a training launcher
-   explicitly; freeze and document provisional mechanics before designing a comparison.
+5. The training launcher now accepts this schema through a local logging adapter.
+   Freeze and document provisional mechanics before designing a research comparison.
 
 Training and research experiment design remain separate, user-directed steps.
