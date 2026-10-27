@@ -12,12 +12,13 @@ from flax.linen.initializers import constant, orthogonal
 from flax.training.train_state import TrainState
 from omegaconf import OmegaConf
 
-import jaxmarl
 import wandb
-from jaxmarl.wrappers.baselines import OvercookedV2LogWrapper
+from scenarios import make_env, wrap_training
 
 
 class ScannedRNN(nn.Module):
+    metal_compat: bool = False
+
     @functools.partial(
         nn.scan,
         variable_broadcast="params",
@@ -33,11 +34,16 @@ class ScannedRNN(nn.Module):
 
         new_carry = self.initialize_carry(ins.shape[0], ins.shape[1])
 
-        rnn_state = jnp.where(
-            resets[:, np.newaxis],
-            new_carry,
-            rnn_state,
-        )
+        if self.metal_compat:
+            # Autodiff also saves scan outputs: keep its reset mask numeric.
+            reset = resets[:, np.newaxis].astype(rnn_state.dtype)
+            rnn_state = (1 - reset) * rnn_state + reset * new_carry
+        else:
+            rnn_state = jnp.where(
+                resets[:, np.newaxis],
+                new_carry,
+                rnn_state,
+            )
         new_rnn_state, y = nn.GRUCell(features=ins.shape[1])(rnn_state, ins)
         return new_rnn_state, y
 
@@ -136,7 +142,9 @@ class ActorCriticRNN(nn.Module):
         embedding = nn.LayerNorm()(embedding)
 
         rnn_in = (embedding, dones)
-        hidden, embedding = ScannedRNN()(hidden, rnn_in)
+        hidden, embedding = ScannedRNN(
+            metal_compat=self.config.get("RUNTIME", {}).get("METAL_COMPATIBILITY", False)
+        )(hidden, rnn_in)
 
         actor_mean = nn.Dense(
             self.config["FC_DIM_SIZE"],
@@ -218,7 +226,8 @@ def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
 
 
 def make_trainer(config):
-    env = jaxmarl.make(config["ENV_NAME"], **config["ENV_KWARGS"])
+    metal_compat = config.get("RUNTIME", {}).get("METAL_COMPATIBILITY", False)
+    env = make_env(env_name=config["ENV_NAME"], **config["ENV_KWARGS"])
 
     config["NUM_ACTORS"] = env.num_agents * config["NUM_ENVS"]
     config["NUM_UPDATES"] = (
@@ -228,7 +237,7 @@ def make_trainer(config):
         config["NUM_ACTORS"] * config["NUM_STEPS"] // config["NUM_MINIBATCHES"]
     )
 
-    env = OvercookedV2LogWrapper(env, replace_info=False)
+    env = wrap_training(env)
 
     def create_learning_rate_fn():
         base_learning_rate = config["LR"]
@@ -348,6 +357,12 @@ def make_trainer(config):
                 hstate,
                 rng,
             )
+            if metal_compat:
+                # jax-metal 0.1.1 loses boolean scan outputs; widen before storage.
+                transition = jax.tree.map(
+                    lambda x: x.astype(jnp.int32) if x.dtype == jnp.bool_ else x,
+                    transition,
+                )
             return runner_state, transition
 
         initial_hstate = runner_state[-2]
@@ -516,7 +531,9 @@ def make_trainer(config):
         metric = jax.tree.map(lambda x: x.mean(), metric)
         metric["update_step"] = update_step
         metric["env_step"] = update_step * config["NUM_STEPS"] * config["NUM_ENVS"]
-        jax.debug.callback(callback, metric)
+        if not metal_compat:
+            # Metal cannot lower host callbacks; train.py logs returned rows instead.
+            jax.debug.callback(callback, metric)
 
         runner_state = (
             train_state,

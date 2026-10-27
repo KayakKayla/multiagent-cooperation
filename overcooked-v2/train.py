@@ -15,6 +15,7 @@ from pathlib import Path
 from omegaconf import OmegaConf
 
 import checkpoint as ckpt
+from scenarios import make_env
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG = SCRIPT_DIR / "configs/coord_ring.yaml"
@@ -108,7 +109,16 @@ def execute_training(module, config, key, output, resume_path=None):
     keep_last = config["CHECKPOINT_KEEP_LAST"]
     source = ALGORITHMS[config["ALGORITHM"]]
 
-    state = jax.jit(init)(key)  # a fresh state is also the template for restoring
+    metal_compat = config.get("RUNTIME", {}).get("METAL_COMPATIBILITY", False)
+    if metal_compat:
+        if jax.default_backend().lower() != "metal":
+            raise ValueError("Experimental Metal mode requires JAX_PLATFORMS=METAL,cpu.")
+        # Orthogonal initialization needs QR, which jax-metal cannot lower.
+        cpu, gpu = jax.devices("cpu")[0], jax.devices("METAL")[0]
+        state = jax.jit(init, backend="cpu")(jax.device_put(key, cpu))
+        state = jax.device_put(state, gpu)
+    else:
+        state = jax.jit(init)(key)  # a fresh state is also the restore template
     metrics, done = {}, 0
     if resume_path is not None:
         state, metrics, done = ckpt.load_checkpoint(resume_path, state, config, source)
@@ -134,7 +144,11 @@ def execute_training(module, config, key, output, resume_path=None):
                    for x in jax.tree.leaves(jax.device_get(state[0].params))):
             raise ValueError(f"Model weights became non-finite by update {done + n}.")
         done += n
-        metrics = ckpt.concat_metrics([metrics, jax.device_get(chunk_metrics)])
+        host_metrics = jax.device_get(chunk_metrics)
+        if metal_compat:
+            for row in range(n):
+                module.wandb.log(jax.tree.map(lambda x: x[row], host_metrics))
+        metrics = ckpt.concat_metrics([metrics, host_metrics])
         saved = ckpt.save_checkpoint(output, state, [metrics], done, config,
                                      source, keep_last)
         print(f"Saved checkpoint {saved.name}", flush=True)
@@ -208,7 +222,7 @@ def run(args, config, run_dir, resume_path) -> None:
     module = load_algorithm(config["ALGORITHM"])
 
     # Constructing the environment checks settings without playing any games.
-    env = module.jaxmarl.make(config["ENV_NAME"], **config["ENV_KWARGS"])
+    env = make_env(env_name=config["ENV_NAME"], **config["ENV_KWARGS"])
     updates = config["TOTAL_TIMESTEPS"] // (config["NUM_ENVS"] * config["NUM_STEPS"])
     # Fail early if settings would produce no updates or an invalid batch reshape.
     if updates < 1:
@@ -329,6 +343,8 @@ def main() -> None:
                         help="A run folder (uses its latest checkpoint) or one "
                              "checkpoints/update-NNNNNN folder.")
     parser.add_argument("--dry-run", action="store_true", help="Inspect without training.")
+    parser.add_argument("--experimental-metal", action="store_true",
+                        help="Opt in to tested jax-metal workarounds; needs METAL,cpu.")
     args = parser.parse_args()
 
     run_dir = resume_path = None
@@ -338,6 +354,8 @@ def main() -> None:
         run_dir, resume_path = resolve_resume(args.resume)
     config_path = args.config or (run_dir / "config.json" if run_dir else DEFAULT_CONFIG)
     config = load_config(config_path, args.seed)
+    if args.experimental_metal:
+        config.setdefault("RUNTIME", {})["METAL_COMPATIBILITY"] = True
     apply_runtime_flags(config)  # must happen before jax is imported
     run(args, config, run_dir, resume_path)
 

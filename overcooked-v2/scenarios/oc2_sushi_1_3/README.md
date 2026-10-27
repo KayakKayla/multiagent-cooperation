@@ -97,10 +97,13 @@ training configurations, and recorded baselines must retain their behavior.
 
 The local `scenarios.make_env(layout, **kwargs)` factory selects
 `oc2_sushi_1_3` and delegates other layouts to the original OvercookedV2 factory.
-The `scenario` runner selects the extension; existing `smoke`, `train`, `evaluate`,
-and `scripted` commands retain their original behavior. The PPO launcher and
-evaluation/dashboard metrics are **not yet wired to train this new scenario**.
-There is no claim of checkpoint compatibility or real-game policy transfer.
+The PPO launcher uses a local logging adapter for this scenario, and CPU
+frozen-policy evaluation records sushi deliveries and reuses the replay renderer.
+The [training guide](../../README.md#tiny-sushi-ppo-check) covers the two-update
+setup check and opt-in Mac GPU support. Existing layouts retain their behavior.
+Sushi observations/actions differ from upstream layouts; their learned weights
+are not interchangeable. Full-state resume still requires matching config and
+algorithm source. Commercial-game policy transfer remains untested.
 
 ## State, actions, and observations
 
@@ -162,12 +165,15 @@ recorded routes do not prove exhaustive tile-by-tile fidelity.
 
 ## Verification
 
-Fifteen focused tests cover scripted reuse/conservation, invalid transfers,
+Sixteen focused tests cover scripted reuse/conservation, invalid transfers,
 simultaneous collisions and pickup, work limits, cooking on/off heat, blocked
 return/drying stations, finite item capacity, episode termination/autoreset,
 observation masking, and JAX JIT/batching. Five existing replay regressions and
 an original `coord_ring` reset/step passed on CPU. Browser playback, seeking,
-and backward/forward stepping were checked. No PPO updates were run.
+and backward/forward stepping were checked. Three PPO-interface tests additionally
+cover terminal reward/reset logging, legacy wrapper selection, and policy replay.
+The [tiny PPO check](../../README.md#tiny-sushi-ppo-check) runs two updates and
+verifies checkpoint reload and frozen-policy evaluation; it is not useful training.
 
 The script compares normalized checkpoints with the tracked
 [`reference_workflow.json`](reference_workflow.json), derived from the manual
@@ -183,7 +189,7 @@ Generated summaries include source hashes and the reference comparison's scope.
    when revising mechanics or timing.
 4. Compare semantic milestones with the real-game trace, normalizing object IDs
    and coordinates rather than expecting the commercial game's IDs in the simulator.
-5. Integrate the new observation/action schema and metrics into a training launcher
-   explicitly; freeze and document provisional mechanics before designing a comparison.
+5. The training launcher now accepts this schema through a local logging adapter.
+   Freeze and document provisional mechanics before designing a research comparison.
 
 Training and research experiment design remain separate, user-directed steps.
