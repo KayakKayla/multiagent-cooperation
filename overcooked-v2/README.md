@@ -119,18 +119,21 @@ Each evaluation creates a new folder under `outputs/evaluate/` containing:
 - `config.json` and `protocol.json`: environment/model settings, test seeds, policy hash,
   source revision, and the recorded episode selection. An untrained evaluation also
   saves its actual initial weights in `params.msgpack`.
-- `replay.html`: a self-contained browser replay with every simulator step, chef
-  positions/facing/inventories/actions, numbered pots, deliveries, and raw team score.
+- `replay.html`: a self-contained illustrated browser replay with every simulator
+  step, chef positions/facing/inventories/actions, pot status, delivery jumps, and
+  raw team score. **Illustrated / Original** compares the same recorded state.
 - `rollout.gif`, `initial.png`, and `final.png`: the existing annotated kitchen previews.
 
 Open `replay.html` directly in a browser on Windows, Linux, or macOS. It starts paused
 at step 0 and works offline; viewers need no simulator environment or GPU. Drag the
 timeline backward or forward, use the step buttons or enter a step number, and select
 0.25x, 0.5x, 1x, or 2x speed. Pot overlays show the remaining cooking steps, or
-Ready/Waiting. Space plays/pauses; left/right arrows move one step when
+Ready/Waiting. A grid toggle shows exact cell coordinates. Space plays/pauses; left/right arrows move one step when
 you are not editing a control. Seeking or stepping pauses playback; it stops at step
-400, and Replay starts it again. At 1x each step lasts 100 ms, a display speed rather
-than measured simulator runtime.
+the final recorded step, and Replay starts it again. At 1x each upstream step lasts
+100 ms, a display speed rather than measured simulator runtime. The sushi scenario
+uses its configured step duration. Layout dimensions, recipes, steps, pots, and
+delivery totals come from the episode rather than the 18-soup reference.
 
 There are 401 states: the initial kitchen plus the result of all 400 joint actions.
 The displayed action is the action that produced that state, so step 0 has no previous
@@ -139,6 +142,26 @@ zero-based `(column, row)`. The HTML embeds a versioned JSON payload with metada
 state/action/event data, and PNG frames, separate from its playback UI. Future panels
 can consume additional recorded information. The current policy does not produce
 explicit task plans.
+
+The shared viewer supports upstream layouts (including recipe indicators/switches
+and numbered ingredient IDs) and the sushi prototype (partial assembly, movable
+rice pots, chopping/washing progress, and dirty/clean plates). Other ingredient IDs
+use labelled pouches rather than inventing food names. Unsupported artwork falls
+back to original recorded frames with an explanation. GIF/PNG previews retain their
+original rendering; the new illustration is in the HTML spectator view.
+
+To restyle an existing saved HTML replay without simulation, evaluation, or training,
+run from the repository root:
+
+```bash
+python3 overcooked-v2/replay.py path/to/replay.html
+# Or upgrade all replay.html files under a directory:
+python3 overcooked-v2/replay.py overcooked-v2/outputs/evaluate
+```
+
+This replaces the HTML UI in place while preserving recorded metadata, states,
+actions, totals, and original PNG frames. The restyling command uses standard-library
+Python only. [Artwork and renderer notes](assets/replay/README.md).
 
 The HTML replay and GIF always show the **first** test episode. The HTML retains every
 step; the GIF has one frame per two steps. Their score

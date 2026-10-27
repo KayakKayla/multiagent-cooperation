@@ -132,4 +132,6 @@ def replay_data(script):
                 seed=0, episode=0, frame_ms=env.rules.step_seconds*1000, agent_view_size=env.agent_view_size,
                 perspective="Two-chef script; no learned policy. Prototype geometry and timing; score uses a fixed delivery reward.",
                 legend="C = chopped cucumber · R = rice · N = nori · P = pot · D = dirty plate. Only cooked rice can enter a plate. Prawn supply is inactive.",
-                image_max_width=720), steps=steps)
+                image_max_width=720,
+                renderer=dict(kind="sushi", cook_ticks=env.cook_ticks,
+                              chop_ticks=env.chop_ticks, wash_ticks=env.wash_ticks)), steps=steps)
