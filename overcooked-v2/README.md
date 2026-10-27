@@ -36,9 +36,55 @@ and produced an eight-step evaluation replay with zero deliveries.
 Full-state checkpoint resumes still require identical algorithm source; older
 checkpoints need their original code revision to resume.
 
+### Experimental Mac GPU check
+
+The M5 Pro check uses **jax-metal 0.1.1 with JAX/jaxlib 0.4.38** in a separate
+environment. Apple's plugin is [experimental](https://developer.apple.com/metal/jax/).
+It loses boolean outputs stored by compiled loops on this tested setup, lacks QR
+initialization, and cannot run our logging callback. `--experimental-metal` opts
+in to workarounds: store trajectory flags as integers inside the loop, use a
+numeric recurrent reset mask so its saved gradients avoid boolean loop buffers,
+initialize on CPU before transferring to GPU, and log returned metrics from
+Python. PPO loss/update math and the default CPU/CUDA path stay unchanged.
+
+From `overcooked-v2/`, using Python 3.12:
+
+```bash
+python3.12 -m venv .venv-metal
+.venv-metal/bin/python -m pip install -r requirements-metal.txt
+ENABLE_PJRT_COMPATIBILITY=1 JAX_PLATFORMS=METAL,cpu XLA_PYTHON_CLIENT_PREALLOCATE=false \
+  .venv-metal/bin/python train.py --config configs/oc2_sushi_check.yaml --experimental-metal
+```
+
+Keep CPU available for initialization. The opt-in is saved in `config.json` and
+reused by `--resume`. Use the existing CPU environment for `evaluate.py`; GPU
+evaluation has not been adapted. Run the focused GPU correctness checks with:
+
+```bash
+ENABLE_PJRT_COMPATIBILITY=1 JAX_PLATFORMS=METAL,cpu \
+  .venv-metal/bin/python -m unittest tests.test_metal_compatibility -v
+```
+
+These compare two GPU updates against CPU, including episode boundaries inside
+rollouts, and check exact checkpoint/resume recovery. Short M5 Pro benchmarks
+also passed CPU agreement with these warmed update timings:
+
+| Kitchens × rollout steps | CPU/update | Metal/update | GPU speedup |
+| --- | ---: | ---: | ---: |
+| 16 × 64 | 0.832 s | 0.471 s | 1.77× |
+| 64 × 64 | 6.425 s | 1.239 s | 5.19× |
+
+Each result is the median of five interleaved, synchronized samples after three
+untimed calls, repeating a fixed initial state. Both use the same CNN with
+32-wide recurrent/dense layers, one PPO epoch, two minibatches, and 32-step
+episodes. Compilation and checkpoint/file logging are excluded. The original
+two-kitchen, eight-step check favored CPU (7.6 ms versus 43.3 ms), so batch size
+matters. These checks establish neither long-run stability nor full research
+performance; other layouts and GPU evaluation remain unverified.
+
 Source: [JaxMARL](https://github.com/bold-lab-ai/JaxMARL), tracked as a pinned Git submodule. Its commit is also recorded in `UPSTREAM_REVISION`.
 The pinned upstream simulator is unchanged. Our trainer preserves the PPO update
-math and adds local setup and checkpointing.
+math and adds local setup, checkpointing, and optional Metal compatibility.
 
 ## Training options
 

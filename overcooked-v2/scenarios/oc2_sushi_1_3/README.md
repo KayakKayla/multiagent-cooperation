@@ -97,10 +97,13 @@ training configurations, and recorded baselines must retain their behavior.
 
 The local `scenarios.make_env(layout, **kwargs)` factory selects
 `oc2_sushi_1_3` and delegates other layouts to the original OvercookedV2 factory.
-The `scenario` runner selects the extension; existing `smoke`, `train`, `evaluate`,
-and `scripted` commands retain their original behavior. The PPO launcher and
-evaluation/dashboard metrics are **not yet wired to train this new scenario**.
-There is no claim of checkpoint compatibility or real-game policy transfer.
+The PPO launcher uses a local logging adapter for this scenario, and CPU
+frozen-policy evaluation records sushi deliveries and reuses the replay renderer.
+The [training guide](../../README.md#tiny-sushi-ppo-check) covers the two-update
+setup check and opt-in Mac GPU support. Existing layouts retain their behavior.
+Sushi observations/actions differ from upstream layouts; their learned weights
+are not interchangeable. Full-state resume still requires matching config and
+algorithm source. Commercial-game policy transfer remains untested.
 
 ## State, actions, and observations
 
