@@ -1,0 +1,36 @@
+# CPU plumbing check only: two updates, 32 total environment steps.
+# Short episodes deliberately exercise reset/logging; this cannot train a useful policy.
+ENV_NAME: overcooked_v2
+ENV_KWARGS:
+  layout: oc2_sushi_1_3
+  agent_view_size: 2
+  rules:
+    max_steps: 8
+
+LR: 0.0005
+ANNEAL_LR: false
+LR_WARMUP: 0.0
+NUM_ENVS: 2
+NUM_STEPS: 8
+NUM_MINIBATCHES: 2
+UPDATE_EPOCHS: 1
+TOTAL_TIMESTEPS: 32
+REW_SHAPING_HORIZON: 32
+FC_DIM_SIZE: 32
+GRU_HIDDEN_DIM: 32
+ACTIVATION: relu
+CLIP_EPS: 0.2
+ENT_COEF: 0.01
+GAMMA: 0.99
+GAE_LAMBDA: 0.95
+SCALE_CLIP_EPS: false
+VF_COEF: 0.5
+MAX_GRAD_NORM: 0.25
+SEED: 0
+NUM_SEEDS: 1
+ENTITY: ""
+PROJECT: se390-overcooked-v2
+WANDB_MODE: disabled
+ALGORITHM: ippo_rnn
+CHECKPOINT_INTERVAL_UPDATES: 1
+CHECKPOINT_KEEP_LAST: 2

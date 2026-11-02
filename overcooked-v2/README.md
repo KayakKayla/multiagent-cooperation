@@ -6,13 +6,85 @@
 root) runs a JAX-native grid prototype with chopping, movable pots, sushi assembly,
 and a finite dirty/clean plate cycle. A two-chef scripted check serves two dishes
 and reuses a washed plate, saving an offline replay. No training is launched.
-The commercial-game map and several timings remain provisional, and the PPO
-launcher is not yet connected to this scenario. Existing maps/JaxMARL stay unchanged.
+The commercial-game map and several timings remain provisional. The PPO launcher
+also accepts this scenario; the small check below verifies the hookup. Existing
+maps/JaxMARL stay unchanged.
 See [the scenario guide](scenarios/oc2_sushi_1_3/README.md) for CPU setup, actions,
 observations, assumptions, and checks.
 
+### Tiny sushi PPO check
+
+With the full PPO dependencies installed, run from `overcooked-v2/`:
+
+```bash
+JAX_PLATFORMS=cpu .venv/bin/python train.py --config configs/oc2_sushi_check.yaml
+JAX_PLATFORMS=cpu .venv/bin/python evaluate.py --run outputs/train/<printed-run-folder> --episodes 1
+```
+
+For CPU installation, use the PPO versions in `requirements.txt` with
+`jax==0.4.38` instead of the CUDA extra, plus Pillow from
+`requirements-scenario-cpu.txt`. The standalone scenario dependencies alone are
+insufficient for PPO. Existing GPU setup and launch commands are unchanged.
+
+The check runs two kitchens for two updates: **32 environment steps**, with
+eight-step episodes to exercise resets. It uses a smaller recurrent/dense size,
+the existing CNN/PPO code, and zero added reward shaping. Checkpoints, reload
+verification, and evaluation outputs use the standard paths. This budget cannot
+produce a useful policy; the check config is not a research baseline. The first
+CPU run took about 20 seconds including compilation, saved/reloaded its weights,
+and produced an eight-step evaluation replay with zero deliveries.
+Full-state checkpoint resumes still require identical algorithm source; older
+checkpoints need their original code revision to resume.
+
+### Experimental Mac GPU check
+
+The M5 Pro check uses **jax-metal 0.1.1 with JAX/jaxlib 0.4.38** in a separate
+environment. Apple's plugin is [experimental](https://developer.apple.com/metal/jax/).
+It loses boolean outputs stored by compiled loops on this tested setup, lacks QR
+initialization, and cannot run our logging callback. `--experimental-metal` opts
+in to workarounds: store trajectory flags as integers inside the loop, use a
+numeric recurrent reset mask so its saved gradients avoid boolean loop buffers,
+initialize on CPU before transferring to GPU, and log returned metrics from
+Python. PPO loss/update math and the default CPU/CUDA path stay unchanged.
+
+From `overcooked-v2/`, using Python 3.12:
+
+```bash
+python3.12 -m venv .venv-metal
+.venv-metal/bin/python -m pip install -r requirements-metal.txt
+ENABLE_PJRT_COMPATIBILITY=1 JAX_PLATFORMS=METAL,cpu XLA_PYTHON_CLIENT_PREALLOCATE=false \
+  .venv-metal/bin/python train.py --config configs/oc2_sushi_check.yaml --experimental-metal
+```
+
+Keep CPU available for initialization. The opt-in is saved in `config.json` and
+reused by `--resume`. Use the existing CPU environment for `evaluate.py`; GPU
+evaluation has not been adapted. Run the focused GPU correctness checks with:
+
+```bash
+ENABLE_PJRT_COMPATIBILITY=1 JAX_PLATFORMS=METAL,cpu \
+  .venv-metal/bin/python -m unittest tests.test_metal_compatibility -v
+```
+
+These compare two GPU updates against CPU, including episode boundaries inside
+rollouts, and check exact checkpoint/resume recovery. Short M5 Pro benchmarks
+also passed CPU agreement with these warmed update timings:
+
+| Kitchens × rollout steps | CPU/update | Metal/update | GPU speedup |
+| --- | ---: | ---: | ---: |
+| 16 × 64 | 0.832 s | 0.471 s | 1.77× |
+| 64 × 64 | 6.425 s | 1.239 s | 5.19× |
+
+Each result is the median of five interleaved, synchronized samples after three
+untimed calls, repeating a fixed initial state. Both use the same CNN with
+32-wide recurrent/dense layers, one PPO epoch, two minibatches, and 32-step
+episodes. Compilation and checkpoint/file logging are excluded. The original
+two-kitchen, eight-step check favored CPU (7.6 ms versus 43.3 ms), so batch size
+matters. These checks establish neither long-run stability nor full research
+performance; other layouts and GPU evaluation remain unverified.
+
 Source: [JaxMARL](https://github.com/bold-lab-ai/JaxMARL), tracked as a pinned Git submodule. Its commit is also recorded in `UPSTREAM_REVISION`.
-The upstream simulator and PPO algorithm are unchanged. Our scripts provide repeatable local checks and a saved baseline training launcher.
+The pinned upstream simulator is unchanged. Our trainer preserves the PPO update
+math and adds local setup, checkpointing, and optional Metal compatibility.
 
 ## Training options
 

@@ -2,6 +2,7 @@
 import jax
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+from types import SimpleNamespace
 
 from .environment import Action, Item
 from .layout import Tile
@@ -135,3 +136,23 @@ def replay_data(script):
                 image_max_width=720,
                 renderer=dict(kind="sushi", cook_ticks=env.cook_ticks,
                               chop_ticks=env.chop_ticks, wash_ticks=env.wash_ticks)), steps=steps)
+
+
+def save_policy_preview(env, initial, trace, output, mode, seed):
+    """Reuse the scripted state descriptions and renderer for a frozen policy."""
+    from replay import save_replay
+    states, actions, *_ = jax.device_get(trace)
+    states = [initial] + [jax.tree.map(lambda value: value[t], states) for t in range(len(actions))]
+    episode = SimpleNamespace(env=env, states=states, actions=[[None, None]] + actions.tolist(),
+                              labels=[""] * len(states))
+    data = replay_data(episode)
+    data["metadata"].update(mode=mode, seed=int(seed),
+        perspective="Frozen policy; no learning during evaluation. Prototype geometry, timing and fixed delivery reward.")
+    frames = [render(env, state) for state in states]
+    save_replay(data, frames, output)
+    Image.fromarray(frames[0]).save(output / "initial.png")
+    Image.fromarray(frames[-1]).save(output / "final.png")
+    indices = np.unique(np.append(np.arange(0, len(frames), 2), len(frames) - 1))
+    sampled = [Image.fromarray(frames[i]) for i in indices]
+    sampled[0].save(output / "rollout.gif", save_all=True, append_images=sampled[1:],
+                    duration=round(env.rules.step_seconds * 2000), loop=0)

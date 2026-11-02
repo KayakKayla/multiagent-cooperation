@@ -1,0 +1,11 @@
+# Experimental Mac setup; install in its own venv, leaving CUDA/CPU environments intact.
+-r requirements-scenario-cpu.txt
+jaxlib==0.4.38
+jax-metal==0.1.1
+flax==0.10.2
+optax==0.2.4
+chex==0.1.88
+distrax==0.1.5
+orbax-checkpoint==0.10.3
+setuptools==80.9.0
+-e ./JaxMARL[algs]

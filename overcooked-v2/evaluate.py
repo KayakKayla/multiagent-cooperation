@@ -19,6 +19,7 @@ from jaxmarl.environments.overcooked_v2.common import (
 )
 from preview import save_preview
 from train import DEFAULT_CONFIG, SCRIPT_DIR, load_baseline
+from scenarios import make_env
 
 
 def initialize_policy(module, config, env):
@@ -77,7 +78,10 @@ def make_episode(module, config, env, network):
             observations, after, rewards, _, _ = env.step_env(
                 step_key, state, action_dict
             )
-            correct, wrong = delivery_counts(state, after, actions)
+            if env.name == "oc2_sushi_1_3":
+                correct, wrong = after.deliveries - state.deliveries, jnp.int32(0)
+            else:
+                correct, wrong = delivery_counts(state, after, actions)
             # Reward is shared: read it once. Do not add training's shaping bonuses.
             reward = rewards[env.agents[0]]
             finite = jnp.all(jnp.isfinite(policy.probs))
@@ -121,7 +125,7 @@ def main():
     module, config = load_baseline(
         run / "config.json" if run else DEFAULT_CONFIG, args.seed
     )
-    env = module.jaxmarl.make(config["ENV_NAME"], **config["ENV_KWARGS"])
+    env = make_env(env_name=config["ENV_NAME"], **config["ENV_KWARGS"])
     network, params = initialize_policy(module, config, env)
     if run:
         params = serialization.from_bytes(params, (run / "params.msgpack").read_bytes())
@@ -139,15 +143,16 @@ def main():
         # Keep the actual before weights, not just an initialization seed.
         (output / "params.msgpack").write_bytes(checkpoint_bytes)
     seeds = list(range(args.eval_seed, args.eval_seed + args.episodes))
+    frame_ms = round(env.rules.step_seconds * 1000) if env.name == "oc2_sushi_1_3" else 100
     protocol = {
         "policy": mode, "source_run": str(run) if run else None,
         "policy_sha256": hashlib.sha256(checkpoint_bytes).hexdigest(),
         "upstream_revision": revision, "backend": jax.default_backend(),
         "episode_seeds": seeds, "action_selection": "sample", "recorded_episode": 0,
         "reward": "shared raw environment reward counted once; no shaping",
-        "gif_stride": 2, "gif_frame_ms": 200,
+        "gif_stride": 2, "gif_frame_ms": 2 * frame_ms,
         "replay_file": "replay.html", "replay_schema_version": 1,
-        "replay_stride": 1, "replay_frame_ms": 100,
+        "replay_stride": 1, "replay_frame_ms": frame_ms,
     }
     (output / "protocol.json").write_text(json.dumps(protocol, indent=2) + "\n")
     print(
@@ -178,7 +183,11 @@ def main():
         writer.writerows(rows)
     # Always record the first episode; do not pick whichever looks most successful.
     print("Rendering the first episode with spectator counters.", flush=True)
-    save_preview(*recorded, output, config, mode, seeds[0])
+    if env.name == "oc2_sushi_1_3":
+        from scenarios.oc2_sushi_1_3.preview import save_policy_preview
+        save_policy_preview(env, *recorded, output, mode, seeds[0])
+    else:
+        save_preview(*recorded, output, config, mode, seeds[0])
     summary = {
         "status": "complete", "policy": mode, "episodes": len(rows),
         "mean_team_reward": float(np.mean([row["team_reward"] for row in rows])),
