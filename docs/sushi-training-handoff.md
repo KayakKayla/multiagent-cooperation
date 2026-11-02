@@ -81,11 +81,13 @@ Local packaging on November 1, 2026 commits the learning sources, tests,
 configs and documentation on `sushi-dish-training`. The final CPU check passed
 84 tests with 11 optional Metal skips. No additional research training ran.
 No push or new PR is authorized yet; show the user the push/PR plan first.
-PR #43 contains earlier Mac/PPO integration only and remains the dependency
-for this learning work. The historical journal and October 27 handoff retain
-their original stopping-point descriptions.
+PR #43's earlier Mac/PPO integration is now merged; the learning PR can target
+`main` directly. The historical journal and October 27 handoff retain their
+original stopping-point descriptions.
 
-Ignored outputs contain models/data/evidence not backed up by these commits.
-Keep the complete frozen v5/v7/v8 directories and training data during cleanup;
-prepare a separate artifact download before claiming teammates can run v8.
-The original checkout remains untouched.
+The complete frozen v8 inference model is now tracked under
+`model/oc2_sushi_1_3/policy-spawn-v8/`, with original provenance, source snapshots
+and integrity hashes. Teammates can use the model and learning guides to run it
+without a separate download. Ignored outputs still contain the training data,
+optimizer checkpoints, v5/v7 references, raw runs and replay evidence; preserve
+those separately. The original checkout remains untouched.

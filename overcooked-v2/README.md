@@ -17,10 +17,12 @@ observations, assumptions, and checks.
 A separate behavior-cloning workflow now learns from audited demonstrations.
 The latest frozen v8 policy served seven dishes in all 20 standard-start,
 600-step episodes; mean dishes were 6.40 with 5% action delays and 6.30 with
-changed initial poses. This is fixed-layout simulator performance. The model
-weights and raw runs remain separate local artifacts and are not included in
-Git. See the [sushi learning guide](../docs/sushi-training.md) for the method,
-results, CPU evaluation command, artifact requirements, and limitations.
+changed initial poses. This is fixed-layout simulator performance. The complete
+frozen v8 model is included under `model/oc2_sushi_1_3/policy-spawn-v8/` at the
+repository root; raw training runs and datasets remain local ignored artifacts.
+See the [model guide](../model/README.md) for CPU inference and file integrity,
+or the [sushi learning guide](../docs/sushi-training.md) for the method, results
+and limitations.
 The tiny PPO check below remains a setup check, distinct from these results.
 
 ### Tiny sushi PPO check

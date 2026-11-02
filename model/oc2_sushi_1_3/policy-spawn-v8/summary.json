@@ -1,0 +1,18 @@
+{
+  "status": "stopped_at_budget",
+  "updates": 1500,
+  "seconds": 279.08065429108683,
+  "last_training_metrics": {
+    "accuracy": 0.9946666955947876,
+    "accuracy_action_0": 1.0,
+    "accuracy_action_1": 1.0,
+    "accuracy_action_2": 1.0,
+    "accuracy_action_3": 1.0,
+    "accuracy_action_4": 0.9821428656578064,
+    "accuracy_action_5": 0.9940119981765747,
+    "accuracy_action_6": 1.0,
+    "loss": 0.00849093496799469,
+    "unweighted_nll": 0.01012804452329874
+  },
+  "learning_success": "not measured here; use evaluate_sushi_policy.py"
+}

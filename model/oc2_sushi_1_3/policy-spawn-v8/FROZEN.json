@@ -1,0 +1,22 @@
+{
+  "sha256": "8d086d8bd3f18e751e08974145dae825f0e18ed4b1edaed93515c7b4e474c46a",
+  "training_updates": 1500,
+  "warm_start": "policy-cooperation-v7",
+  "training_data": "demonstrations-v8,57trajectories;17anchors+40declaredspawnvariants",
+  "validation": {
+    "normal": 7.0,
+    "delay5percent": 6.5,
+    "posejitter1": 6.3
+  },
+  "selection_reason": "same validationnormal/delay mean, improved pose mean2.8->6.3",
+  "frozen_before_final_seed_range": [
+    6000,
+    6019
+  ],
+  "paired_baseline": "policy-cooperation-v7",
+  "final_conditions": [
+    "standard",
+    "action_dropout0.05",
+    "spawn_jitter1+random_facing"
+  ]
+}

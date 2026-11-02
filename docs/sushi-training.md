@@ -40,10 +40,11 @@ Use the full CPU learning dependencies described in the
 dependencies are insufficient. Run the commands below from `overcooked-v2/`
 with the submodule initialized and that Python environment active.
 
-The frozen weights are a separate local artifact, not included in Git and not
-uploaded yet. Obtain the complete `policy-spawn-v8/` folder, including config,
-metadata, source snapshots and manifests, and place it under
-`outputs/dish-learning/`. Its `params.msgpack` SHA-256 must be:
+The complete frozen model is included in Git at
+[`model/oc2_sushi_1_3/policy-spawn-v8/`](../model/oc2_sushi_1_3/policy-spawn-v8/).
+No separate model download is needed. It includes weights, config, original
+metadata, source snapshots and manifests; the [model guide](../model/README.md)
+explains the files and integrity check. Its `params.msgpack` SHA-256 must be:
 
 ```text
 8d086d8bd3f18e751e08974145dae825f0e18ed4b1edaed93515c7b4e474c46a
@@ -53,7 +54,7 @@ For one sampled standard-start episode, without learning or weight updates:
 
 ```bash
 JAX_PLATFORMS=cpu python evaluate_sushi_policy.py \
-  --run outputs/dish-learning/policy-spawn-v8 \
+  --run ../model/oc2_sushi_1_3/policy-spawn-v8 \
   --episodes 1 --eval-seed 6000
 ```
 
@@ -174,11 +175,13 @@ neural evaluator never imports or runs the teacher.
 
 ## Scope and artifacts
 
-Models and raw runs are local ignored artifacts under
-`overcooked-v2/outputs/dish-learning/`. Frozen policies contain `params.msgpack`,
-config, metadata, weights SHA and source manifests. Preserve those files, not
-just a Git dirty flag: training/evaluation source files were initially untracked.
-The selected model is identified in the final experiment summary.
+The selected v8 inference model is tracked under
+`model/oc2_sushi_1_3/policy-spawn-v8/`. Original raw runs, training datasets,
+optimizer checkpoints, v5/v7 references and generated replays remain local
+ignored artifacts under `overcooked-v2/outputs/dish-learning/`. Preserve those
+separately. Frozen policies contain weights, config, metadata, weight hashes
+and source manifests; the tracked v8 folder is not an exact training-resume
+checkpoint or a complete reproduction dataset.
 
 The simulator retains provisional geometry, simplified scoring, no burning,
 and one cucumber-rice-nori recipe. Full-map observations are an explicit first
