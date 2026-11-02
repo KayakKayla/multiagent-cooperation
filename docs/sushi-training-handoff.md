@@ -80,9 +80,10 @@ This is a future argument record, not a command already run. No extra training w
 Local packaging on November 1, 2026 commits the learning sources, tests,
 configs and documentation on `sushi-dish-training`. The final CPU check passed
 84 tests with 11 optional Metal skips. No additional research training ran.
-No push or new PR is authorized yet; show the user the push/PR plan first.
-PR #43's earlier Mac/PPO integration is now merged; the learning PR can target
-`main` directly. The historical journal and October 27 handoff retain their
+The user authorized publication: branch `sushi-dish-training` is pushed and
+[PR #44](https://github.com/KayakKayla/multiagent-cooperation/pull/44) is open
+against `main`, including the frozen v8 model. PR #43's earlier Mac/PPO
+integration is merged. The historical journal and October 27 handoff retain their
 original stopping-point descriptions.
 
 The complete frozen v8 inference model is now tracked under
