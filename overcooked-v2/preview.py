@@ -118,7 +118,7 @@ def render_replay_frames(states, radius):
     return np.concatenate(batches)
 
 
-def save_preview(initial, trace, output: Path, config, mode, seed):
+def save_preview(initial, trace, output: Path, config, mode, seed, policy_seeds=None):
     scripted = mode == "scripted"
     states, actions, rewards, correct, wrong, _ = trace
     # HTML retains every step; only the legacy GIF samples every second step.
@@ -175,7 +175,10 @@ def save_preview(initial, trace, output: Path, config, mode, seed):
             y = 139 + agent * 104
             color = ("#ff6b6b", "#60a5fa")[agent % 2]
             number = agent if scripted else agent + 1
-            text(right, y, f"Chef {number} ({'red' if agent == 0 else 'blue'})", color)
+            label = f"Chef {number} ({'red' if agent == 0 else 'blue'})"
+            if policy_seeds is not None:
+                label += f" | seed {policy_seeds[agent]}"
+            text(right, y, label, color)
             holding = inventory_name(states.agents.inventory[index, agent])
             text(right, y + 29, f"Holding: {holding}")
             action = "start" if index == 0 else (

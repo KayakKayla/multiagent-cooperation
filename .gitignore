@@ -5,3 +5,6 @@ __pycache__/
 .ruff_cache/
 .vscode/
 .idea/
+
+# Machine settings, personal agent context, and local run notes.
+.local/
