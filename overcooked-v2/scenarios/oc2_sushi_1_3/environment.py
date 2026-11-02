@@ -223,7 +223,7 @@ class SushiEnvironment:
         s = self._empty(s, hand, discard & ~keep)
         s = self._write(s, hand, discard & keep, contents=0, progress=0)
 
-        work = (action == Action.WORK) & ~has_hand & has_target & ~worked[target]
+        work = (action == Action.WORK) & ~has_hand & has_target & (worked[target] == 0)
         chop = work & (tile == Tile.BOARD) & (tk == Item.RAW_CUCUMBER)
         wash = work & (tile == Tile.SINK) & (tk == Item.DIRTY_PLATE)
         new_chop = jnp.minimum(s.progress[target] + 1, self.chop_ticks)
@@ -235,10 +235,10 @@ class SushiEnvironment:
         s = self._write(s, target, wash, progress=new_wash)
         s = self._write(s, target, wash_done, kind=int(Item.PLATE), location=self.drying_cell,
                         contents=0, progress=0, return_due=-1)
-        worked = worked.at[target].set(worked[target] | chop | wash)
+        worked = worked.at[target].add((chop | wash).astype(jnp.int32))
         success = spawn | lift | place | onto_plate | into_plate | into_pot | delivered | discard | chop | wash
         invalid = ((action == Action.PICKUP_PLACE) | (action == Action.WORK)) & ~success
-        return s, jnp.array([delivered, success, invalid]), worked
+        return s, jnp.array([delivered, success, invalid], dtype=jnp.int32), worked
 
     def _advance(self, s, actions):
         valid_actions = (actions >= 0) & (actions < self.num_actions)
@@ -256,8 +256,10 @@ class SushiEnvironment:
         positions = jnp.where(collision, s.positions, target)
         blocked = moving & (positions == s.positions).all(axis=1)
         s = s._replace(positions=positions, directions=jnp.where(moving, direction, s.directions))
-        events = jnp.zeros((2, 3), dtype=jnp.bool_)
-        worked = jnp.zeros(self.rules.capacity, dtype=jnp.bool_)
+        # Metal loses boolean scatter updates. Keep internal event/work buffers
+        # numeric, then restore boolean event fields at the public API boundary.
+        events = jnp.zeros((2, 3), dtype=jnp.int32)
+        worked = jnp.zeros(self.rules.capacity, dtype=jnp.int32)
         # Alternate interaction priority; simultaneous movement is resolved first.
         for offset in range(2):
             agent = (s.time + offset) % 2
@@ -279,8 +281,8 @@ class SushiEnvironment:
         reward = deliveries.astype(jnp.float32) * self.rules.delivery_reward
         s = s._replace(deliveries=s.deliveries + deliveries, score=s.score + reward,
                        done=s.time >= self.rules.max_steps)
-        info = {"delivered": events[:, 0], "interaction_succeeded": events[:, 1],
-                "invalid_action": events[:, 2] | ~valid_actions, "blocked": blocked,
+        info = {"delivered": events[:, 0] != 0, "interaction_succeeded": events[:, 1] != 0,
+                "invalid_action": (events[:, 2] != 0) | ~valid_actions, "blocked": blocked,
                 "deliveries": s.deliveries}
         return s, reward, info
 
