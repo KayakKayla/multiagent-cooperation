@@ -7,7 +7,7 @@ Team Sims is studying cooperation in Overcooked-style environments. OvercookedV2
 - `overcooked-v2/smoke.py`: one random-action episode and a rendered preview.
 - `overcooked-v2/train_check.py`: a tiny upstream PPO run, with checkpoint save/reload verification.
 - `overcooked-v2/train.py` and `configs/coord_ring.yaml`: a saved single-seed baseline using the paper's Coordination Ring settings.
-- `overcooked-v2/evaluate.py` and `preview.py`: frozen before/after policy tests, per-episode scores, an interactive HTML replay, and an annotated GIF.
+- `overcooked-v2/evaluate.py` and `preview.py`: frozen before/after and cross-policy tests, per-episode scores, an interactive HTML replay, and an annotated GIF.
 - `overcooked-v2/run.ps1` and `run.sh`: launch checks or user-started baseline training through the local Python environment.
 - `overcooked-v2/setup.sh`: initialize the dependency and install pinned packages.
 - `overcooked-v2/JaxMARL/`: pinned upstream Git submodule.
@@ -24,9 +24,9 @@ Users can choose between two training platforms:
 
 Both paths should use the same pinned JaxMARL version, baseline configuration, and evaluation protocol so results can be compared.
 
-## Local NVIDIA GPU setup and checks
+## Local setup and checks
 
-The verified local setup uses Ubuntu-24.04 in WSL2, Python 3.12, and an RTX 3070. See [the setup guide](overcooked-v2/README.md) for versions, compatibility settings, and requirements.
+Use Python 3.12 on Linux or macOS; Windows users can use WSL2 and the PowerShell launcher. Setup defaults to CPU dependencies; use `bash overcooked-v2/setup.sh --gpu` for Linux/NVIDIA CUDA 12. See [the setup guide](overcooked-v2/README.md) for commands. Machine settings and personal notes belong in the ignored `.local/` directory.
 
 After cloning, run this from the repository root in Ubuntu:
 
@@ -34,7 +34,7 @@ After cloning, run this from the repository root in Ubuntu:
 bash overcooked-v2/setup.sh
 ```
 
-This initializes only JaxMARL, at the pinned commit, and installs packages into a separate Linux virtual environment. It does not launch a check.
+This initializes only the pinned JaxMARL submodule and installs packages into `overcooked-v2/.venv/`, unless local settings select another environment. It does not launch a check.
 
 From the repository root in PowerShell:
 

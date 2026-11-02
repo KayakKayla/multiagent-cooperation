@@ -1,5 +1,34 @@
 # OvercookedV2 training and setup
 
+## Setup
+
+Use Python 3.12 and Git on Linux or macOS. The macOS setup uses CPU; the pinned CUDA
+environment is for Linux machines with a compatible NVIDIA GPU.
+From the repository root:
+
+```bash
+bash overcooked-v2/setup.sh
+```
+
+A fresh checkout defaults to a CPU environment in `overcooked-v2/.venv/`. To explicitly install the
+pinned Linux/NVIDIA CUDA 12 environment, use `bash overcooked-v2/setup.sh --gpu`.
+`--cpu` explicitly selects the CPU dependencies, including when local settings select GPU.
+Setup initializes only the pinned JaxMARL submodule, installs dependencies, and checks
+package compatibility. It does not play games or train a policy.
+
+Run commands below through `bash overcooked-v2/run.sh <mode> ...` from the repository root.
+
+Machine settings are optional and ignored by Git:
+
+- `.local/overcooked.env`: Bash settings loaded by `setup.sh` and `run.sh`; use `OVC_VENV`
+  for an existing virtual environment and `OVC_REQUIREMENTS` for a chosen requirements file.
+  Runtime variables such as `JAX_PLATFORMS` and `XLA_FLAGS` can also be set here.
+- `.local/AGENTS.md` and other notes: personal context, device details, troubleshooting,
+  and references to locally generated results.
+
+Do not put machine paths, driver details, or individual run histories in shared files.
+Experiment settings belong in `configs/`; outputs contain each run's settings and metadata.
+
 ## Local Overcooked! 2 scenario prototype
 
 `bash overcooked-v2/run.sh scenario --layout oc2_sushi_1_3` (from the repository
@@ -34,10 +63,9 @@ JAX_PLATFORMS=cpu .venv/bin/python train.py --config configs/oc2_sushi_check.yam
 JAX_PLATFORMS=cpu .venv/bin/python evaluate.py --run outputs/train/<printed-run-folder> --episodes 1
 ```
 
-For CPU installation, use the PPO versions in `requirements.txt` with
-`jax==0.4.38` instead of the CUDA extra, plus Pillow from
-`requirements-scenario-cpu.txt`. The standalone scenario dependencies alone are
-insufficient for PPO. Existing GPU setup and launch commands are unchanged.
+The default setup installs the full CPU PPO dependencies. The standalone
+`requirements-scenario-cpu.txt` environment alone is insufficient for PPO.
+Use `setup.sh --gpu` for the pinned Linux/NVIDIA dependencies.
 
 The check runs two kitchens for two updates: **32 environment steps**, with
 eight-step episodes to exercise resets. It uses a smaller recurrent/dense size,
@@ -105,14 +133,6 @@ math and adds local setup, checkpointing, and optional Metal compatibility.
 - **Modal cloud GPU:** users can choose Modal instead of a local GPU. Modal integration and setup instructions are pending; the commands below currently cover local training only.
 
 The intended Modal path should reuse the local path's pinned dependencies, baseline settings, and evaluation protocol, and persist saved weights and results.
-
-## Current status (2026-09-30)
-
-- Installation completed; `pip check` passed. GPU simulator check completed 400 steps and produced `outputs/smoke/random-rollout.gif`.
-- The upstream recurrent PPO setup check passed on the GPU: 2 updates, 512 environment steps, and 16 optimizer steps. Saved weights were reloaded and verified with model inference; parameters, predictions, and metrics were finite.
-- The saved checkpoint is a setup artifact, too briefly trained to be a useful baseline. Research intervention and evaluation design remain undecided. Further experiments are user-led.
-- Frozen-policy playback is verified on the GPU. The first seed-42 untrained reference completed five 400-step episodes (test seeds 1000-1004): zero deliveries and zero raw reward. Scores, initial weights, and an annotated GIF are in `outputs/evaluate/coord_ring-untrained-20261001T004631182874Z/`. No research training has been launched.
-- Coordination Ring paper-aligned single-seed training is prepared in `train.py` and `configs/coord_ring.yaml`; its dry-run and synthetic model initialization/save/reload checks have passed on the GPU. No baseline training has been launched.
 
 ## Coordination Ring baseline
 
@@ -269,6 +289,37 @@ Replay data checks, using the installed simulator Python environment from this d
 totals, pot status, the self-contained HTML payload, and the saved scripted replay
 against its full audit when that replay is available. No training is performed.
 
+## Cross-policy evaluation
+
+Use `--partner-run` to assign a second saved policy to chef 2 (blue). `--run` controls
+chef 1 (red). Omitting `--partner-run` keeps both chefs on the `--run` policy.
+Each chef has separate recurrent memory, reset at the start of every episode; no
+weights are updated. Both checkpoints must use the pinned source revision, matching
+environment settings, and matching network architecture. Training seeds and training
+hyperparameters may differ.
+
+From the repository root, set paths relative to `overcooked-v2/`:
+
+```bash
+run_a="outputs/train/<first-run-folder>"
+run_b="outputs/train/<second-run-folder>"
+bash overcooked-v2/run.sh evaluate --run "$run_a" --episodes 50 --eval-seed 2000
+bash overcooked-v2/run.sh evaluate --run "$run_b" --episodes 50 --eval-seed 2000
+bash overcooked-v2/run.sh evaluate --run "$run_a" --partner-run "$run_b" --episodes 50 --eval-seed 2000
+bash overcooked-v2/run.sh evaluate --run "$run_b" --partner-run "$run_a" --episodes 50 --eval-seed 2000
+```
+
+These are A+A, B+B, A+B, and B+A. The same test seeds align initial kitchens and action
+random-number streams across conditions; different policies produce different decisions.
+Test both mixed orders because assignment to chefs can matter.
+
+Cross-policy results use a new `cross-policy` output folder. `protocol.json` identifies
+both checkpoints by source path, training seed, hash, and chef/color assignment;
+`partner-config.json` preserves the second policy's settings. The Coordination Ring GIF identifies each
+chef's policy seed and still shows only the first episode. Scores remain shared team
+scores, recorded once. If using the local PowerShell bridge, its equivalent option is
+`-PartnerRun <second-training-directory>`.
+
 ## Scripted 18-soup reference
 
 The saved fixed-start Coordination Ring schedule delivers 18 soups (360 raw team
@@ -299,27 +350,17 @@ From the `multiagent-cooperation` repository root:
 
 Each new process compiles JAX operations before running. The successful training check took about 26 seconds for compilation and training on this device, plus startup and saving. W&B external logging is disabled; no account is required. No process continues training after either command exits.
 
-## Runtime
+## Dependencies and reproducibility
 
-- Windows 10 hosts Ubuntu-24.04 in WSL2.
-- GPU: NVIDIA RTX 3070, 8 GB; Windows driver 560.94.
-- Isolated Linux Python 3.12 environment: `/home/ro/.venvs/se390-overcooked-v2`.
-- JAX uses CUDA 12 packages inside that environment. The existing Windows driver and Anaconda environments are unchanged.
-- `run.sh` defaults to `JAX_PLATFORMS=cuda,cpu`: GPU computation with CPU availability for upstream logging callbacks. GPU memory preallocation is disabled.
+`requirements.txt` pins the shared CPU dependencies. `requirements-gpu.lock.txt` pins
+the resolved Linux CUDA 12 environment and is selected explicitly with `setup.sh --gpu`.
+The simulator version is pinned separately through the Git submodule and `UPSTREAM_REVISION`.
+The launchers use an existing environment at `OVC_VENV` when supplied; otherwise they use
+`overcooked-v2/.venv/`. Existing virtual environments and generated outputs are ignored.
 
-### Local compatibility fixes
-
-- CUDA command buffers are disabled with `--xla_gpu_enable_command_buffer=`. Repeated batched environment steps stalled with the default setting on this WSL/GPU stack; the same probe passed with this flag. Existing unrelated XLA flags are preserved.
-- The training check waits for result arrays individually because JAX's combined readiness wait stalled here. The upstream algorithm and simulator remain unchanged.
-- Nested per-recipe metrics are flattened to numeric NPZ entries such as `returned_episode_recipe_returns/0_0_0`, avoiding pickled dictionaries.
-
-For CPU-only debugging in Ubuntu: `JAX_PLATFORMS=cpu bash run.sh smoke`.
-
-## Recreate
-
-In Ubuntu, from this directory, run `bash setup.sh`. It initializes the JaxMARL submodule at the repository's pinned commit, verifies `UPSTREAM_REVISION`, and installs `requirements-gpu.lock.txt` when present. Python 3.12, system `pip`, and Git must be available. The virtual environment lives in Linux storage for performance; code and outputs remain in this Windows project folder. CUDA dependencies require several GB of disk space.
-
-`requirements.txt` records the selected direct dependencies; the lock file records all resolved packages. The installed environment and generated outputs are local and ignored by Git. JaxMARL's source is kept in its own repository; our repository tracks its URL and exact commit through `.gitmodules` and the submodule entry. The optional Robotarium submodule inside JaxMARL is not initialized.
+Runtime workarounds for an individual device belong in `.local/overcooked.env`.
+Training records device/backend details in each output folder so environment differences
+can be investigated without adding a particular machine's configuration to the repository.
 
 When pulling a change that updates the dependency, run `git submodule update --init` from the repository root. Do not update JaxMARL to its latest branch accidentally; changing the pinned revision is a separate project decision.
 

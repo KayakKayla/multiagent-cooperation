@@ -38,6 +38,35 @@ def initialize_policy(module, config, env):
     return network, params
 
 
+def check_run_revision(run, revision):
+    """Reject saved training results that record a different JaxMARL code version."""
+    metadata = json.loads((run / "metadata.json").read_text())
+    if metadata["upstream_revision"] != revision:
+        raise ValueError(f"Saved policy and local upstream revisions differ: {run}")
+
+
+def check_partner_config(config, partner_config):
+    """Check compatibility with the evaluator's shared network and observation setup.
+
+    Refactor or remove these restrictions when each policy can use its own network
+    design and observation settings. Training seeds and hyperparameters may differ.
+    """
+    fields = ("ENV_NAME", "ENV_KWARGS", "ACTIVATION", "FC_DIM_SIZE", "GRU_HIDDEN_DIM")
+    differences = [field for field in fields if config[field] != partner_config[field]]
+    if config.get("ALGORITHM", "ippo_rnn") != partner_config.get("ALGORITHM", "ippo_rnn"):
+        differences.append("ALGORITHM")
+    if differences:
+        raise ValueError("Policies have incompatible settings: " + ", ".join(differences))
+
+
+def load_checkpoint(run, template):
+    params = serialization.from_bytes(template, (run / "params.msgpack").read_bytes())
+    for value, expected in zip(jax.tree.leaves(params), jax.tree.leaves(template), strict=True):
+        if np.shape(value) != np.shape(expected) or not np.isfinite(np.asarray(value)).all():
+            raise ValueError(f"Checkpoint has incompatible shapes or non-finite weights: {run}")
+    return params
+
+
 def delivery_counts(before, after, actions):
     """Count actual dish removals at serving stations, including simultaneous ones."""
     forward = jax.vmap(lambda agent: agent.get_fwd_pos())(before.agents)
@@ -58,7 +87,7 @@ def delivery_counts(before, after, actions):
 def make_episode(module, config, env, network):
     """Compile playback only: sample actions, advance the kitchen, record events."""
     @jax.jit
-    def play(params, seed):
+    def play(params, seed, partner_params=None):
         key, reset_key = jax.random.split(jax.random.PRNGKey(seed))
         observations, initial = env.reset(reset_key)
         hidden = module.ScannedRNN.initialize_carry(
@@ -68,10 +97,25 @@ def make_episode(module, config, env, network):
         def step(carry, _):
             observations, state, hidden, key = carry
             key, action_key, step_key = jax.random.split(key, 3)
-            # Shared weights, separate memory for each chef; reset memory each episode.
+            # Each chef keeps its own memory, whether weights are shared or different.
             obs_batch = jnp.stack([observations[agent] for agent in env.agents])
-            inputs = (obs_batch[None], jnp.full((1, env.num_agents), state.done))
-            hidden, policy, _ = network.apply(params, hidden, inputs)
+            dones = jnp.full((1, env.num_agents), state.done)
+            if partner_params is None:
+                # Preserve the original shared-policy playback and sampling behavior.
+                hidden, policy, _ = network.apply(params, hidden, (obs_batch[None], dones))
+            else:
+                memories, logits = [], []
+                # This two-chef loop is compiled by JAX, not repeated in Python at runtime.
+                for chef, weights in enumerate((params, partner_params)):
+                    inputs = (obs_batch[None, chef:chef + 1], dones[:, chef:chef + 1])
+                    memory, chef_policy, _ = network.apply(
+                        weights, hidden[chef:chef + 1], inputs
+                    )
+                    memories.append(memory)
+                    logits.append(chef_policy.logits)
+                hidden = jnp.concatenate(memories, axis=0)
+                policy = module.distrax.Categorical(logits=jnp.concatenate(logits, axis=1))
+            # Sample both actions with the same random-number layout for every pairing.
             actions = policy.sample(seed=action_key)[0]
             action_dict = {agent: actions[i] for i, agent in enumerate(env.agents)}
             # step_env retains the final kitchen, whereas env.step auto-resets it.
@@ -104,6 +148,10 @@ def main():
         "--run", type=Path,
         help="Training directory containing config.json and params.msgpack.",
     )
+    parser.add_argument(
+        "--partner-run", type=Path,
+        help="Optional saved policy for chef 2 (blue); --run controls chef 1 (red).",
+    )
     parser.add_argument("--seed", type=int, help="Policy initialization seed (untrained only).")
     parser.add_argument("--episodes", type=int, default=5)
     parser.add_argument(
@@ -116,24 +164,33 @@ def main():
     if args.run and args.seed is not None:
         parser.error("A saved policy uses its saved training seed; omit --seed.")
 
+    if args.partner_run and not args.run:
+        parser.error("--partner-run requires --run; it cannot accompany --untrained.")
     run = args.run.resolve() if args.run else None
+    partner_run = args.partner_run.resolve() if args.partner_run else None
     revision = (SCRIPT_DIR / "UPSTREAM_REVISION").read_text().strip()
-    if run:
-        metadata = json.loads((run / "metadata.json").read_text())
-        if metadata["upstream_revision"] != revision:
-            raise ValueError("Saved policy and local upstream revisions differ.")
+    for source_run in (run, partner_run):
+        if source_run:
+            check_run_revision(source_run, revision)
     module, config = load_baseline(
         run / "config.json" if run else DEFAULT_CONFIG, args.seed
     )
+    partner_config = config
+    if partner_run:
+        partner_config = json.loads((partner_run / "config.json").read_text())
+        check_partner_config(config, partner_config)
     env = make_env(env_name=config["ENV_NAME"], **config["ENV_KWARGS"])
+    if partner_run and env.num_agents != 2:
+        raise ValueError("Cross-policy evaluation requires exactly two chefs.")
     network, params = initialize_policy(module, config, env)
+    partner_params = load_checkpoint(partner_run, params) if partner_run else None
     if run:
-        params = serialization.from_bytes(params, (run / "params.msgpack").read_bytes())
+        params = load_checkpoint(run, params)
     if not all(np.isfinite(np.asarray(x)).all() for x in jax.tree.leaves(params)):
         raise ValueError("Policy contains non-finite weights.")
     checkpoint_bytes = serialization.to_bytes(jax.device_get(params))
 
-    mode = "trained" if run else "untrained"
+    mode = "cross-policy" if partner_run else ("trained" if run else "untrained")
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     run_name = f"{config['ENV_KWARGS']['layout']}-{mode}-{timestamp}"
     output = SCRIPT_DIR / "outputs/evaluate" / run_name
@@ -142,10 +199,28 @@ def main():
     if not run:
         # Keep the actual before weights, not just an initialization seed.
         (output / "params.msgpack").write_bytes(checkpoint_bytes)
+    if partner_run:
+        (output / "partner-config.json").write_text(json.dumps(partner_config, indent=2) + "\n")
+    policy_seeds = [config["SEED"], partner_config["SEED"]]
+    partner_bytes = (
+        serialization.to_bytes(jax.device_get(partner_params))
+        if partner_run else checkpoint_bytes
+    )
+    # Record both checkpoint identities and their fixed assignment to chef colors.
+    policies = [
+        {"agent": agent, "chef": chef + 1, "color": ("red", "blue")[chef],
+         "source_run": str(source_run) if source_run else None,
+         "training_seed": policy_seeds[chef],
+         "policy_sha256": hashlib.sha256(data).hexdigest()}
+        for chef, (agent, source_run, data) in enumerate(zip(
+            env.agents, (run, partner_run or run), (checkpoint_bytes, partner_bytes)
+        ))
+    ]
     seeds = list(range(args.eval_seed, args.eval_seed + args.episodes))
     frame_ms = round(env.rules.step_seconds * 1000) if env.name == "oc2_sushi_1_3" else 100
     protocol = {
         "policy": mode, "source_run": str(run) if run else None,
+        "partner_run": str(partner_run) if partner_run else None, "policies": policies,
         "policy_sha256": hashlib.sha256(checkpoint_bytes).hexdigest(),
         "upstream_revision": revision, "backend": jax.default_backend(),
         "episode_seeds": seeds, "action_selection": "sample", "recorded_episode": 0,
@@ -159,11 +234,12 @@ def main():
         f"Evaluating {mode} policy, {len(seeds)} episodes; no training. Results: {output}",
         flush=True,
     )
+    print(f"Chef 1 (red): seed {policy_seeds[0]}; chef 2 (blue): seed {policy_seeds[1]}", flush=True)
     play = make_episode(module, config, env, network)
     rows = []
     recorded = None
     for episode, seed in enumerate(seeds):
-        initial, trace = jax.device_get(play(params, np.uint32(seed)))
+        initial, trace = jax.device_get(play(params, np.uint32(seed), partner_params))
         states, actions, rewards, correct, wrong, finite = trace
         if not finite.all() or not np.isfinite(rewards).all() or not bool(states.done[-1]):
             raise ValueError("Invalid policy predictions, rewards, or unfinished episode.")
@@ -187,7 +263,7 @@ def main():
         from scenarios.oc2_sushi_1_3.preview import save_policy_preview
         save_policy_preview(env, *recorded, output, mode, seeds[0])
     else:
-        save_preview(*recorded, output, config, mode, seeds[0])
+        save_preview(*recorded, output, config, mode, seeds[0], policy_seeds=policy_seeds)
     summary = {
         "status": "complete", "policy": mode, "episodes": len(rows),
         "mean_team_reward": float(np.mean([row["team_reward"] for row in rows])),

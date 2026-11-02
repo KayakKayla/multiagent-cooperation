@@ -1,6 +1,6 @@
-# Compatible CUDA 12 stack for the existing RTX 3070 driver.
+# Shared CPU dependencies; use requirements-gpu.lock.txt for Linux CUDA 12.
 # JaxMARL source is pinned separately in UPSTREAM_REVISION.
-jax[cuda12]==0.4.38
+jax==0.4.38
 flax==0.10.2
 optax==0.2.4
 chex==0.1.88
