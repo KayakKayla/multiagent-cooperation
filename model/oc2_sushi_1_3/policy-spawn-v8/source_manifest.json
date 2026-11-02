@@ -1,0 +1,6 @@
+{
+  "sushi_imitation.py": "2d964f99e8b10d2c300cafd6bdfcdcc0eec94c7573b908ae068247fe5c47a76d",
+  "algorithms/ippo_rnn.py": "aac7932be5e7ce08375e30c3b20d78c44d0ec3d9c25a9b0be1b39c7537dde7b1",
+  "scenarios/oc2_sushi_1_3/environment.py": "ffe3196e464d8b0a570fcdb9f3d4f8ff5d2946438f9230315954d1e8d2b926ad",
+  "evaluate_sushi_policy.py": "9abf432f3d3c9fab52a0275509f556c9e78e9181353eafb19ec688d5cd9f94d0"
+}
