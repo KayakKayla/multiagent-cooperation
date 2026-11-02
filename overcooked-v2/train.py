@@ -1,6 +1,7 @@
 # NOTE: make sure to set export XLA_FLAGS="--xla_gpu_deterministic_ops=true"
 # to ensure consistency between training runs
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -98,7 +99,26 @@ def git_state() -> dict:
         return {"git_commit": None, "git_dirty": None}
 
 
-def execute_training(module, config, key, output, resume_path=None):
+def warm_start_runner(state, weights):
+    """Load policy variables into a fresh optimizer, preserving env/RNG state."""
+    import jax
+    import numpy as np
+    from flax import serialization
+
+    template = state[0].params
+    params = serialization.from_bytes(template, weights)
+    if jax.tree.structure(params) != jax.tree.structure(template):
+        raise ValueError("Initial policy variable structure differs from this model.")
+    for ref, value in zip(jax.tree.leaves(template), jax.tree.leaves(params)):
+        if (ref.shape != value.shape or ref.dtype != value.dtype
+                or not np.isfinite(np.asarray(value)).all()):
+            raise ValueError("Initial policy variables have incompatible shapes/dtypes or non-finite values.")
+    device = jax.tree.leaves(template)[0].device
+    params = jax.device_put(params, device)
+    return (state[0].replace(params=params), *state[1:])
+
+
+def execute_training(module, config, key, output, resume_path=None, initial_weights=None):
     import jax
     import numpy as np
 
@@ -119,6 +139,11 @@ def execute_training(module, config, key, output, resume_path=None):
         state = jax.device_put(state, gpu)
     else:
         state = jax.jit(init)(key)  # a fresh state is also the restore template
+    if initial_weights is not None:
+        if resume_path is not None:
+            raise ValueError("Choose checkpoint resume or initial policy weights, not both.")
+        state = warm_start_runner(state, initial_weights)
+        print("Loaded initial policy weights into a fresh optimizer.", flush=True)
     metrics, done = {}, 0
     if resume_path is not None:
         state, metrics, done = ckpt.load_checkpoint(resume_path, state, config, source)
@@ -322,7 +347,8 @@ def run(args, config, run_dir, resume_path) -> None:
         module.wandb.log = log_progress
         try:
             state, metrics, elapsed = execute_training(
-                module, config, key, output, resume_path)
+                module, config, key, output, resume_path,
+                initial_weights=getattr(args, "initial_weights_bytes", None))
             if config["NUM_UPDATES"] != updates:
                 raise RuntimeError("Update count disagrees with the algorithm's own.")
             save_results(state, metrics, output, elapsed, resumed_from)
@@ -342,6 +368,8 @@ def main() -> None:
     parser.add_argument("--resume", type=Path, metavar="PATH",
                         help="A run folder (uses its latest checkpoint) or one "
                              "checkpoints/update-NNNNNN folder.")
+    parser.add_argument("--init-weights", type=Path,
+                        help="Start a new optimizer from params.msgpack or a run folder.")
     parser.add_argument("--dry-run", action="store_true", help="Inspect without training.")
     parser.add_argument("--experimental-metal", action="store_true",
                         help="Opt in to tested jax-metal workarounds; needs METAL,cpu.")
@@ -349,11 +377,19 @@ def main() -> None:
 
     run_dir = resume_path = None
     if args.resume is not None:
+        if args.init_weights is not None:
+            parser.error("--init-weights cannot be used with --resume.")
         if args.seed is not None:
             parser.error("--seed cannot be used with --resume; the checkpoint holds the RNG state.")
         run_dir, resume_path = resolve_resume(args.resume)
     config_path = args.config or (run_dir / "config.json" if run_dir else DEFAULT_CONFIG)
     config = load_config(config_path, args.seed)
+    if args.init_weights is not None:
+        path = args.init_weights
+        if path.is_dir():
+            path = path / "params.msgpack"
+        args.initial_weights_bytes = path.read_bytes()
+        config["INITIAL_POLICY_SHA256"] = hashlib.sha256(args.initial_weights_bytes).hexdigest()
     if args.experimental_metal:
         config.setdefault("RUNTIME", {})["METAL_COMPATIBILITY"] = True
     apply_runtime_flags(config)  # must happen before jax is imported

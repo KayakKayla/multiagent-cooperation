@@ -1,0 +1,41 @@
+{
+  "ENV_NAME": "overcooked_v2",
+  "ENV_KWARGS": {
+    "layout": "oc2_sushi_1_3",
+    "agent_view_size": null,
+    "rules": {
+      "max_steps": 600
+    }
+  },
+  "LR": 1e-05,
+  "ANNEAL_LR": false,
+  "LR_WARMUP": 0.0,
+  "NUM_ENVS": 8,
+  "NUM_STEPS": 64,
+  "NUM_MINIBATCHES": 4,
+  "UPDATE_EPOCHS": 2,
+  "TOTAL_TIMESTEPS": 20480,
+  "REW_SHAPING_HORIZON": 20480,
+  "FC_DIM_SIZE": 32,
+  "GRU_HIDDEN_DIM": 32,
+  "ACTIVATION": "relu",
+  "CLIP_EPS": 0.1,
+  "ENT_COEF": 0.0005,
+  "GAMMA": 0.99,
+  "GAE_LAMBDA": 0.95,
+  "SCALE_CLIP_EPS": false,
+  "VF_COEF": 0.5,
+  "MAX_GRAD_NORM": 0.25,
+  "SEED": 42,
+  "NUM_SEEDS": 1,
+  "ENTITY": "",
+  "PROJECT": "se390-overcooked-v2",
+  "WANDB_MODE": "disabled",
+  "ALGORITHM": "ippo_rnn",
+  "CHECKPOINT_INTERVAL_UPDATES": 5,
+  "CHECKPOINT_KEEP_LAST": 0,
+  "TRAINING_METHOD": "PPO_fine_tuning",
+  "RUNTIME": {
+    "METAL_COMPATIBILITY": false
+  }
+}
