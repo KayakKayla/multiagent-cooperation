@@ -12,6 +12,17 @@ maps/JaxMARL stay unchanged.
 See [the scenario guide](scenarios/oc2_sushi_1_3/README.md) for CPU setup, actions,
 observations, assumptions, and checks.
 
+### Learned sushi policy
+
+A separate behavior-cloning workflow now learns from audited demonstrations.
+The latest frozen v8 policy served seven dishes in all 20 standard-start,
+600-step episodes; mean dishes were 6.40 with 5% action delays and 6.30 with
+changed initial poses. This is fixed-layout simulator performance. The model
+weights and raw runs remain separate local artifacts and are not included in
+Git. See the [sushi learning guide](../docs/sushi-training.md) for the method,
+results, CPU evaluation command, artifact requirements, and limitations.
+The tiny PPO check below remains a setup check, distinct from these results.
+
 ### Tiny sushi PPO check
 
 With the full PPO dependencies installed, run from `overcooked-v2/`:
