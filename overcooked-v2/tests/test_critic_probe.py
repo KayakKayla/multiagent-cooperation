@@ -3,6 +3,7 @@
 Run with the simulator dependencies: python -m unittest tests.test_critic_probe
 """
 
+import copy
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -98,14 +99,13 @@ class CriticProbeTests(unittest.TestCase):
         cls.probed = jax.device_get(probe_play(cls.params, np.uint32(7)))
         cls.initial, cls.trace, cls.inputs = cls.probed
 
-        runner = make_probe_runner(cls.env, cls.network)
+        cls.runner = staticmethod(make_probe_runner(cls.env, cls.network))
         cls.result = jax.device_get(
-            runner(
+            cls.runner(
                 cls.params,
                 cls.inputs["states"],
                 cls.inputs["observations"],
                 cls.inputs["hidden"],
-                cls.inputs["values"],
                 cls.inputs["actions"],
                 cls.inputs["rewards"],
                 cls.inputs["dones"],
@@ -150,28 +150,58 @@ class CriticProbeTests(unittest.TestCase):
             self.assertEqual(len(step["values"]), 2)
             self.assertTrue(np.isfinite(step["values"]).all())
 
-    def test_intervention_baseline_matches_factual_transition(self):
+    def test_intervention_baseline_uses_probe_factual_branch(self):
         actions = np.asarray(self.trace[1])
         rewards = np.asarray(self.trace[2])
         dones = np.asarray(self.inputs["dones"])
-        values = np.asarray(self.inputs["values"])
+        next_values = np.asarray(self.result["next_values"])
+        candidate_rewards = np.asarray(self.result["rewards"])
+        candidate_dones = np.asarray(self.result["dones"])
         for index in range(len(actions)):
             for intervention in self.payload["steps"][index]["interventions"]:
                 actor = intervention["actor"]
                 target = intervention["target"]
                 baseline = intervention["baseline"]
+                code = int(actions[index, actor])
                 self.assertEqual(target, 1 - actor)
-                self.assertEqual(baseline["action"], int(actions[index, actor]))
-                self.assertAlmostEqual(
-                    baseline["next_value"], float(values[index + 1, target])
+                self.assertEqual(baseline["action"], code)
+                self.assertEqual(
+                    baseline["next_value"],
+                    float(next_values[index, actor, code]),
                 )
-                self.assertAlmostEqual(baseline["reward"], float(rewards[index]))
+                self.assertEqual(baseline["reward"], float(rewards[index]))
                 self.assertEqual(baseline["done"], int(dones[index]))
+                self.assertEqual(
+                    baseline["reward"],
+                    float(candidate_rewards[index, actor, code]),
+                )
+                self.assertEqual(
+                    baseline["done"],
+                    int(candidate_dones[index, actor, code]),
+                )
                 alternatives = intervention["alternatives"]
                 self.assertEqual(
                     [alt["action"] for alt in alternatives],
                     list(range(len(action_names()))),
                 )
+                for alternative in alternatives:
+                    alt_code = alternative["action"]
+                    self.assertEqual(
+                        alternative["next_value"],
+                        float(next_values[index, actor, alt_code]),
+                    )
+                    self.assertEqual(
+                        alternative["reward"],
+                        float(candidate_rewards[index, actor, alt_code]),
+                    )
+                    self.assertEqual(
+                        alternative["done"],
+                        int(candidate_dones[index, actor, alt_code]),
+                    )
+                    self.assertEqual(
+                        alternative["value_delta"],
+                        alternative["next_value"] - baseline["next_value"],
+                    )
                 unchanged = next(
                     alt for alt in alternatives
                     if alt["action"] == baseline["action"]
@@ -179,6 +209,80 @@ class CriticProbeTests(unittest.TestCase):
                 for key in ("next_value", "reward", "done"):
                     self.assertEqual(unchanged[key], baseline[key])
                 self.assertEqual(unchanged["value_delta"], 0.0)
+
+    def test_recorded_next_value_offset_does_not_affect_probe_deltas(self):
+        # The rollout and the probe are compiled separately.  On the GPU the
+        # recorded next-frame value can differ from the probe's no-change value
+        # by more than the old 1e-3 absolute tolerance, so deltas must use the
+        # probe baseline rather than the recorded timeline.
+        offset = 0.0606
+        values = np.array(self.inputs["values"], dtype=np.float64)
+        values[1:] += offset
+        offset_payload = build_probe_payload(
+            values,
+            self.inputs["actions"],
+            self.inputs["rewards"],
+            self.inputs["dones"],
+            self.result,
+        )
+        baseline = offset_payload["steps"][0]["interventions"][0]["baseline"]
+        self.assertGreater(abs(float(values[1, 1]) - baseline["next_value"]), 1e-3)
+        for original, shifted in zip(self.payload["steps"], offset_payload["steps"]):
+            self.assertEqual(shifted["interventions"], original["interventions"])
+
+    def test_probe_rejects_mismatched_factual_simulator_results(self):
+        actions = self.inputs["actions"]
+        rewards = np.asarray(self.inputs["rewards"])
+        dones = np.asarray(self.inputs["dones"])
+        values = self.inputs["values"]
+        states = copy.deepcopy(self.inputs["states"])
+        states.agents.pos.x[1, 0] += 1
+        observations = np.asarray(self.inputs["observations"]).copy()
+        observations[1, 0, 0, 0, 0] += 1
+        wrong_rewards = rewards.copy()
+        wrong_rewards[0] += 1.0
+        wrong_dones = dones.copy()
+        wrong_dones[0] = ~wrong_dones[0]
+        cases = (
+            ("state", states, self.inputs["observations"], rewards, dones),
+            ("observation", self.inputs["states"], observations, rewards, dones),
+            ("reward", self.inputs["states"], self.inputs["observations"],
+             wrong_rewards, dones),
+            ("done", self.inputs["states"], self.inputs["observations"],
+             rewards, wrong_dones),
+        )
+        for label, case_states, case_observations, case_rewards, case_dones in cases:
+            with self.subTest(label):
+                result = jax.device_get(
+                    self.runner(
+                        self.params,
+                        case_states,
+                        case_observations,
+                        self.inputs["hidden"],
+                        actions,
+                        case_rewards,
+                        case_dones,
+                        self.inputs["step_keys"],
+                    )
+                )
+                self.assertFalse(np.all(result["factual_ok"]))
+                with self.assertRaises(ValueError):
+                    build_probe_payload(
+                        values, actions, case_rewards, case_dones, result
+                    )
+
+    def test_probe_rejects_nonfinite_probe_values(self):
+        result = dict(self.result)
+        result["next_values"] = np.array(self.result["next_values"], dtype=float)
+        result["next_values"][0, 0, 0] = np.nan
+        with self.assertRaisesRegex(ValueError, "non-finite"):
+            build_probe_payload(
+                self.inputs["values"],
+                self.inputs["actions"],
+                self.inputs["rewards"],
+                self.inputs["dones"],
+                result,
+            )
 
     def test_successor_values_use_post_current_memory(self):
         observations = jnp.asarray(self.inputs["observations"])
@@ -226,7 +330,6 @@ class CriticProbeTests(unittest.TestCase):
             "factual_ok": np.ones((1, 2), dtype=bool),
             "max_state_difference": np.zeros(1),
             "max_observation_difference": np.zeros(1),
-            "max_value_difference": np.zeros(1),
         }
         result["next_values"][0, 0, 1] = 2.0
         result["next_values"][0, 0, 2] = -3.0
@@ -248,7 +351,6 @@ class CriticProbeTests(unittest.TestCase):
             "factual_ok": np.ones((2, 2), dtype=bool),
             "max_state_difference": np.zeros(2),
             "max_observation_difference": np.zeros(2),
-            "max_value_difference": np.zeros(2),
         }
         payload = build_probe_payload(values, actions, rewards, dones, result)
         final = payload["steps"][2]

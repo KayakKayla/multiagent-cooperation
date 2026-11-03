@@ -177,17 +177,24 @@ state is cloned and the factual transition's random key is reused; the recorded 
 and its random-number stream are untouched.
 
 For a transition from state `t` to `t+1`, the baseline uses the recorded action and
-reports the **target chef's** critic value at `t+1` as `next_value`. Alternatives list
-all six actions and report `next_value`, plus the raw `reward` and `done` as context.
-The primary signal is
-`value_delta = alternative next_value - baseline next_value` (signed), so the
-recorded-action alternative has exactly zero delta. `value_delta` is a raw value-head
-difference, not a reward-adjusted quantity. Metrics at state `t` describe the outgoing
-transition to `t+1`; this differs from the replay's displayed "latest action" at state
-`t`. The terminal state reports both chefs' raw current values as diagnostics only: it
-has no outgoing action, no interventions, and no bootstrap or future-return
-interpretation. The last transition's `next_value` is that diagnostic terminal value;
-no future return is added to it.
+reports the **target chef's** probe-recomputed critic value at `t+1` as `next_value`.
+Alternatives list all six actions and report `next_value`, plus the raw `reward` and
+`done` as context. The primary signal is
+`value_delta = alternative next_value - baseline next_value` (signed); the baseline and
+all alternatives come from the same probe result, so the recorded-action alternative
+has exactly zero delta. `value_delta` is a raw value-head difference, not a
+reward-adjusted quantity. Because the recorded rollout and the probe are compiled
+separately, GPU matrix-multiply precision can take a different path: the probe baseline
+can differ slightly from the recorded critic value shown for frame `t+1` (observed up
+to about 0.06 at values near 90). That offset is display-only and cancels from
+`value_delta`; the probe does not require recorded and recomputed values to match, but
+state, observations, reward, and done are still checked exactly. Metrics at state `t`
+describe the outgoing transition to `t+1`; this differs from the replay's displayed
+"latest action" at state `t`. The terminal state reports both chefs' raw current values
+as diagnostics only: it has no outgoing action, no interventions, and no bootstrap or
+future-return interpretation. The last transition's `next_value` is the probe-computed
+terminal value; it is diagnostic only and may differ slightly from the recorded
+terminal value. No future return is added to it.
 
 This is an experimental value-head probe. It does not prove cooperation, estimate a
 return, or causally explain a rollout. Training rewards included shaping bonuses

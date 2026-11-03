@@ -267,7 +267,6 @@ def main():
                     probe_inputs["states"],
                     probe_inputs["observations"],
                     probe_inputs["hidden"],
-                    probe_inputs["values"],
                     probe_inputs["actions"],
                     probe_inputs["rewards"],
                     probe_inputs["dones"],

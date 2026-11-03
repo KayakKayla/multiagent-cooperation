@@ -118,7 +118,7 @@
       </div>
       <div class="critic-grid">
         <section class="card critic-card-recording" aria-labelledby="critic-baseline-heading">
-          <h3 id="critic-baseline-heading">Recorded outgoing move · baseline</h3>
+          <h3 id="critic-baseline-heading">Recorded outgoing action · probe baseline</h3>
           <p id="critic-baseline-action" class="muted critic-card-note"></p>
           <dl class="critic-metrics" id="critic-baseline"></dl>
         </section>
@@ -327,7 +327,7 @@
       `Reward: ${String(critic.reward ?? "raw environment reward; no shaping")}`;
     get("critic-outgoing").textContent = terminal
       ? "No outgoing move to evaluate."
-      : "Value cards are at the displayed state. The comparison below is the other chef's outgoing next-state value, not the recorded last action shown in the chef cards.";
+      : "Value cards are at the displayed state. The comparison below is the other chef's outgoing next-state value, not the recorded last action shown in the chef cards. Baseline and alternatives are recomputed by the probe; because the rollout and probe use separate compiled programs, the baseline can differ slightly from the recorded value shown at the next frame.";
     get("critic-values").replaceChildren();
     for (let chef = 0; chef < 2; chef += 1) {
       let role = "";

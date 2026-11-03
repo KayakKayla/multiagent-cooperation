@@ -79,7 +79,7 @@ def _tree_map_arrays(tree, function):
 def make_probe_runner(env, network):
     """Return a jitted function that evaluates every one-step intervention.
 
-    Expected episode inputs are the recorded state/observation/value timelines
+    Expected episode inputs are the recorded state/observation timelines
     (length T+1), recurrent memory before each observation, and the T actions,
     raw rewards, terminal flags, and simulator keys used by the factual rollout.
     """
@@ -97,7 +97,6 @@ def make_probe_runner(env, network):
         states,
         observations,
         hidden,
-        values,
         actions,
         rewards,
         dones,
@@ -113,7 +112,6 @@ def make_probe_runner(env, network):
                 step_key,
                 next_state_recorded,
                 next_observation_recorded,
-                next_value_recorded,
             ) = inputs
 
             # Every row is one intervention: one actor's candidate action and
@@ -159,17 +157,15 @@ def make_probe_runner(env, network):
             )[:, 0].reshape(num_agents, num_actions)
 
             # The no-change candidate for each actor must reproduce the factual
-            # transition.  Check the simulator result, not just our arithmetic.
-            factual_next_values = jnp.take_along_axis(
-                target_values, action[:, None], axis=1
-            )[:, 0]
+            # transition exactly.  Check the simulator result, not just our
+            # arithmetic; recorded critic values follow a different compiled
+            # path and are not an invariant here.
             factual_rewards = jnp.take_along_axis(
                 next_reward.reshape(num_agents, num_actions), action[:, None], axis=1
             )[:, 0]
             factual_dones = jnp.take_along_axis(
                 next_done.reshape(num_agents, num_actions), action[:, None], axis=1
             )[:, 0]
-            recorded_target_values = next_value_recorded[1 - jnp.arange(num_agents)]
             factual_indices = jnp.arange(num_agents) * num_actions + action
             factual_states = _tree_map_arrays(
                 next_states, lambda leaf: leaf[factual_indices]
@@ -185,15 +181,11 @@ def make_probe_runner(env, network):
             max_observation_difference = _max_tree_difference(
                 factual_observations, broadcast_recorded_observations
             )
-            max_value_difference = jnp.max(
-                jnp.abs(factual_next_values - recorded_target_values)
-            )
             factual_ok = (
                 (factual_rewards == reward)
                 & (factual_dones == done)
-                & (max_state_difference <= 1e-3)
-                & (max_observation_difference <= 1e-3)
-                & (max_value_difference <= 1e-3)
+                & (max_state_difference == 0)
+                & (max_observation_difference == 0)
             )
 
             return (), {
@@ -203,7 +195,6 @@ def make_probe_runner(env, network):
                 "factual_ok": factual_ok,
                 "max_state_difference": max_state_difference,
                 "max_observation_difference": max_observation_difference,
-                "max_value_difference": max_value_difference,
             }
 
         inputs = (
@@ -215,7 +206,6 @@ def make_probe_runner(env, network):
             step_keys,
             _tree_slice(states, slice(1, None)),
             observations[1:],
-            values[1:],
         )
         _, result = jax.lax.scan(step, (), inputs)
         return result
@@ -257,13 +247,9 @@ def build_probe_payload(values, actions, rewards, dones, result):
             "A no-change intervention did not reproduce the factual transition; "
             "the probe would not be interpretable."
         )
-    for name in (
-        "max_state_difference",
-        "max_observation_difference",
-        "max_value_difference",
-    ):
+    for name in ("max_state_difference", "max_observation_difference"):
         differences = np.asarray(result[name])
-        if differences.size and np.max(differences) > 1e-3:
+        if differences.size and np.max(differences) != 0:
             raise ValueError(f"Critic probe factual replay mismatch in {name}.")
     _finite(values, "values")
     _finite(rewards, "rewards")
@@ -289,35 +275,30 @@ def build_probe_payload(values, actions, rewards, dones, result):
         interventions = []
         for actor in range(num_agents):
             target = 1 - actor
-            baseline_next_value = float(values[index + 1, target])
+            # The baseline is the probe's own no-change branch for this actor,
+            # so every candidate shares one compiled value computation.  A
+            # recorded next-frame value can differ slightly on some backends;
+            # that offset is display-only and must not leak into the deltas.
+            baseline_next_value = float(
+                next_values[index, actor, actual[actor]]
+            )
             baseline = {
                 "action": actual[actor],
                 "next_value": baseline_next_value,
-                "reward": float(rewards[index]),
-                "done": int(dones[index]),
+                "reward": float(candidate_rewards[index, actor, actual[actor]]),
+                "done": int(candidate_dones[index, actor, actual[actor]]),
             }
 
             alternatives = []
             for code in range(len(names)):
-                if code == actual[actor]:
-                    # This is exactly the factual transition; canonicalize it
-                    # to the recorded metrics so its delta is exactly zero.
-                    next_value = baseline_next_value
-                    reward = baseline["reward"]
-                    done = baseline["done"]
-                    value_delta = 0.0
-                else:
-                    next_value = float(next_values[index, actor, code])
-                    reward = float(candidate_rewards[index, actor, code])
-                    done = int(candidate_dones[index, actor, code])
-                    value_delta = next_value - baseline_next_value
+                next_value = float(next_values[index, actor, code])
                 alternatives.append(
                     {
                         "action": code,
                         "next_value": next_value,
-                        "reward": reward,
-                        "done": done,
-                        "value_delta": value_delta,
+                        "reward": float(candidate_rewards[index, actor, code]),
+                        "done": int(candidate_dones[index, actor, code]),
+                        "value_delta": next_value - baseline_next_value,
                     }
                 )
 
@@ -371,16 +352,19 @@ def protocol_metadata(files):
             "observation, using the candidate next state's done flag"
         ),
         "value_delta": (
-            "alternative next_value minus the recorded-action baseline "
-            "next_value; raw reward and done are context only"
+            "alternative next_value minus the recorded-action branch's probe "
+            "next_value; both use the same probe computation, so deltas exclude "
+            "the small cross-compilation difference from the recorded next "
+            "frame's value; raw reward and done are context only"
         ),
         "final_state": (
             "raw current value at the terminal state; diagnostic only, with no "
             "outgoing action, no bootstrap, and no future-return interpretation"
         ),
         "final_transition": (
-            "the last intervention's next_value is that diagnostic terminal "
-            "value; no future return is added to it"
+            "the last intervention's next_value is the probe-computed terminal "
+            "value, diagnostic only; it may differ slightly from the recorded "
+            "terminal value, and no future return is added to it"
         ),
         "warning": VALUE_WARNING,
     }
