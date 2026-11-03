@@ -324,15 +324,30 @@ Deploy only the website and lightweight shared code. No JAX, training environmen
 Use a partial clone plus sparse checkout. The deployment guide can start from:
 
 ```bash
-git clone --filter=blob:none --sparse --depth=1 \
-  --single-branch --no-tags --no-recurse-submodules \
+DEPLOY_BRANCH='rowan/evals-sharing-website'
+EXPECTED_COMMIT='<reviewed-full-commit-sha>'
+git clone --filter=blob:none --no-checkout --depth=1 \
+  --branch "$DEPLOY_BRANCH" --single-branch --no-tags --no-recurse-submodules \
   <repo-url> results-site
 cd results-site
-git sparse-checkout set evals-sharing-website
+if [ "$(git rev-parse HEAD)" != "$EXPECTED_COMMIT" ]; then
+  echo "Deployment stopped: checkout does not match the reviewed commit." >&2
+  exit 1
+fi
+git config core.sparseCheckout true
+git config core.sparseCheckoutCone true
+mkdir -p .git/info
+printf '%s\n' '/*' '!/*/' '/evals-sharing-website/' > .git/info/sparse-checkout
+git read-tree -mu HEAD
 git config submodule.recurse false
 git config fetch.recurseSubmodules false
 git config pull.ff only
 ```
+
+Obtain the reviewed full commit SHA before cloning and replace the placeholder.
+The direct cone configuration avoids Git 2.25.1's `clone --sparse` source-directory
+bug and the clean-worktree requirement of `sparse-checkout init` after a
+`--no-checkout` clone. Verify the commit before populating the sparse worktree.
 
 These settings persist. Ordinary fast-forward pulls should preserve the sparse checkout and partial-fetch filter. Cone-mode sparse checkout also includes root-level files. Git still stores commit/tree metadata; explicit operations inspecting excluded file contents/history may fetch them. Do not describe this as a hard access boundary. Verify the actual remote supports partial clone and check that excluded large content is absent before calling deployment complete.
 

@@ -21,7 +21,7 @@ the remote's default branch is not a substitute. Replace the repository URL and
 ```bash
 DEPLOY_BRANCH='rowan/evals-sharing-website'
 EXPECTED_COMMIT='<reviewed-full-commit-sha>'
-git clone --filter=blob:none --sparse --depth=1 \
+git clone --filter=blob:none --no-checkout --depth=1 \
   --branch "$DEPLOY_BRANCH" --single-branch --no-tags --no-recurse-submodules \
   <repo-url> results-site
 cd results-site
@@ -30,7 +30,11 @@ if [ "$(git rev-parse HEAD)" != "$EXPECTED_COMMIT" ]; then
   echo "Deployment stopped: checkout does not match the reviewed commit." >&2
   exit 1
 fi
-git sparse-checkout set evals-sharing-website
+git config core.sparseCheckout true
+git config core.sparseCheckoutCone true
+mkdir -p .git/info
+printf '%s\n' '/*' '!/*/' '/evals-sharing-website/' > .git/info/sparse-checkout
+git read-tree -mu HEAD
 git config submodule.recurse false
 git config fetch.recurseSubmodules false
 git config pull.ff only
@@ -47,6 +51,12 @@ python3.12 -m venv .venv
 Stop before installation if the commit comparison fails. Resolve the branch/SHA
 difference and deploy only the reviewed revision; do not silently accept a newer
 branch tip. Record that full SHA with the deployment's smoke-check results.
+
+The direct cone configuration works with Git 2.25.1 on Ubuntu 20.04. That version's
+`clone --sparse` can mistake the source URL for the sparse initialization directory;
+its `sparse-checkout init` also requires a clean worktree, which a fresh
+`--no-checkout` clone does not provide. Set the patterns before `read-tree` so only
+the selected content is checked out, after the reviewed commit is verified.
 
 The remote must actually support partial clone: inspect clone output, the
 promisor/filter config, checkout contents and `.git/objects` size. Sparse checkout
