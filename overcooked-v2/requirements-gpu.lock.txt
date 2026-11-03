@@ -34,6 +34,7 @@ jaxtyping==0.3.11
 kiwisolver==1.5.1
 markdown-it-py==4.2.0
 matplotlib==3.11.2
+modal==1.6.3
 mdurl==0.1.2
 ml_dtypes==0.5.4
 msgpack==1.2.2
