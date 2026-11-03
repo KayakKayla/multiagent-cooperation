@@ -13,6 +13,7 @@ from sqlalchemy import select, delete, update, text, func
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import undefer
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette._utils import get_route_path
 from evals_shared.format import parse_document, canonical_json, ValidationError, MAX_UPLOAD_BYTES
 from evals_shared.replay import build_web_payload
 from .config import Settings
@@ -48,7 +49,7 @@ async def body_json(request, limit=65536):
 def create_app(settings=None):
     settings = settings or Settings()
     settings.prepare()
-    app = FastAPI(title="SE 390 evaluation archive", docs_url=None, redoc_url=None)
+    app = FastAPI(title="SE 390 evaluation archive", docs_url=None, redoc_url=None, root_path=settings.root_path)
     app.state.settings = settings
     app.state.engine, app.state.db = database(settings)
     app.state.throttle = Throttle()
@@ -62,11 +63,11 @@ def create_app(settings=None):
 
     def render(request, filename, context=None, status_code=200):
         session = request.state.session
-        return templates.TemplateResponse(request=request, name=filename, context={"user": request.state.user, "csrf_token": session.csrf_token if session else "", **(context or {})}, status_code=status_code)
+        return templates.TemplateResponse(request=request, name=filename, context={"user": request.state.user, "csrf_token": session.csrf_token if session else "", "base_path": settings.root_path, "root_path": settings.root_path, **(context or {})}, status_code=status_code)
 
     @app.exception_handler(HTTPException)
     async def http_error(request, error):
-        if request.url.path.startswith("/api/") or request.method != "GET":
+        if get_route_path(request.scope).startswith("/api/") or request.method != "GET":
             return JSONResponse({"detail": error.detail}, status_code=error.status_code, headers=error.headers)
         return render(request, "error.html", {"status_code": error.status_code, "message": error.detail}, error.status_code)
 
@@ -193,7 +194,7 @@ def create_app(settings=None):
                 result, duplicate = import_document(db, doc, user.id, choices)
                 db.delete(row)
                 db.commit()
-                return {"id": result.id, "url": f"/evaluations/{result.id}", "duplicate": duplicate}
+                return {"id": result.id, "url": settings.app_path(f"/evaluations/{result.id}"), "duplicate": duplicate}
         except IntegrityError:
             raise HTTPException(409, "Import conflicts with an existing record; review the upload again")
 
@@ -227,10 +228,10 @@ def create_app(settings=None):
             row = get_row(db, model, id)
             if model == TrainingRun and db.scalar(select(Policy.id).where(Policy.run_id == id).limit(1)):
                 policies = db.scalars(select(Policy).where(Policy.run_id == id)).all()
-                raise HTTPException(409, {"message": "This training run still has checkpoints; remove unreferenced checkpoints first", "references": [{"id": p.id, "url": f"/training-runs/{id}#checkpoints", "name": f"Checkpoint {p.sha256[:12]} · {p.progress if p.progress is not None else 'unknown'} {row.progress_unit or 'units'}"} for p in policies]})
+                raise HTTPException(409, {"message": "This training run still has checkpoints; remove unreferenced checkpoints first", "references": [{"id": p.id, "url": settings.app_path(f"/training-runs/{id}#checkpoints"), "name": f"Checkpoint {p.sha256[:12]} · {p.progress if p.progress is not None else 'unknown'} {row.progress_unit or 'units'}"} for p in policies]})
             if model == Policy and db.scalar(select(Participant.id).where(Participant.policy_id == id).limit(1)):
                 refs = db.scalars(select(Participant.evaluation_id).where(Participant.policy_id == id).distinct()).all()
-                raise HTTPException(409, {"message": "This checkpoint is referenced by evaluations", "references": [{"id": ref, "url": f"/evaluations/{ref}"} for ref in refs]})
+                raise HTTPException(409, {"message": "This checkpoint is referenced by evaluations", "references": [{"id": ref, "url": settings.app_path(f"/evaluations/{ref}")} for ref in refs]})
             db.delete(row)
             db.commit()
             return {"ok": True}
@@ -296,7 +297,7 @@ def create_app(settings=None):
             db.execute(delete(LoginSession).where(LoginSession.token_hash == request.state.session.token_hash))
             token, session = new_session(db, settings, user.id)
         request.state.session = session
-        response = RedirectResponse("/", status_code=303)
+        response = RedirectResponse(settings.app_path("/"), status_code=303)
         set_cookie(response, token, settings)
         return response
 
@@ -307,7 +308,7 @@ def create_app(settings=None):
             db.execute(delete(LoginSession).where(LoginSession.token_hash == request.state.session.token_hash))
             db.commit()
         response = JSONResponse({"ok": True})
-        response.delete_cookie(COOKIE, path="/")
+        response.delete_cookie(COOKIE, path=settings.cookie_path)
         return response
 
     return app

@@ -1,5 +1,20 @@
 "use strict";
 window.Site = {
+  base: () => document.querySelector('meta[name="base-path"]')?.content ?? '',
+  localPath(value) {
+    if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || /[\\\u0000-\u0020]/.test(value)) throw new Error('Invalid application path.');
+    const base=this.base();
+    const local=base && (value===base || value.startsWith(base+'/')) ? value.slice(base.length)||'/' : value;
+    if (local.split(/[?#]/)[0].split('/').some(part=>part==='.'||part==='..')) throw new Error('Invalid application path.');
+    return local;
+  },
+  path(value) { return this.base()+this.localPath(value); },
+  recordURL(value, collection='(?:evaluations|training-runs)') {
+    const local=this.localPath(value);
+    if (!new RegExp(`^/${collection}/[a-zA-Z0-9_-]+$`).test(local)) throw new Error('Invalid research record link.');
+    return this.path(local);
+  },
+  navigate(value) { location.assign(this.path(value)); },
   csrf: () => document.querySelector('meta[name="csrf-token"]')?.content ?? '',
   toast(message, error = false) {
     const box = document.createElement('div'); box.className = `toast${error ? ' error' : ''}`;
@@ -12,7 +27,7 @@ window.Site = {
   async request(url, options = {}) {
     const headers = new Headers(options.headers);
     if (options.method && options.method !== 'GET') headers.set('X-CSRF-Token', this.csrf());
-    const response = await fetch(url, {...options, headers, credentials: 'same-origin'});
+    const response = await fetch(this.path(url), {...options, headers, credentials: 'same-origin'});
     let data; try { data = await response.json(); } catch { data = {}; }
     if (!response.ok) {
       const detail = data.detail;
@@ -26,7 +41,8 @@ window.Site = {
     const refs = error.data?.references ?? error.data?.detail?.references;
     if (Array.isArray(refs)) for (const ref of refs) {
       const href = ref.url ?? (ref.evaluation_id ? `/evaluations/${encodeURIComponent(ref.evaluation_id)}` : null);
-      if (href && /^\/(evaluations|training-runs)\/[a-zA-Z0-9_-]+$/.test(href)) { const link = document.createElement('a'); link.href = href; link.textContent = ref.title ?? ref.name ?? 'Referenced record'; target.append(document.createElement('br'), link); }
+      let url;try { if(href)url=this.recordURL(href); } catch { /* Untrusted references remain plain text. */ }
+      if (url) { const link = document.createElement('a'); link.href = url; link.textContent = ref.title ?? ref.name ?? 'Referenced record'; target.append(document.createElement('br'), link); }
       else target.append(document.createTextNode(`\n${ref.title ?? ref.name ?? ref.id ?? 'Record remains referenced.'}`));
     }
     const fields = error.data?.fields ?? {};
@@ -58,9 +74,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelector('[data-delete-url]')?.addEventListener('click', event => { deletion = event.currentTarget; dialog.querySelector('[data-dialog-error]').textContent=''; dialog.querySelector('#delete-title').textContent=`Permanently delete “${deletion.dataset.deleteName}”?`; dialog.showModal(); });
   document.getElementById('confirm-delete')?.addEventListener('click', async event => {
     const button=event.currentTarget;button.disabled=true;
-    try { await Site.request(deletion.dataset.deleteUrl,{method:'DELETE'}); sessionStorage.setItem('site-notice','Record permanently deleted.'); location.assign('/'); }
+    try { await Site.request(deletion.dataset.deleteUrl,{method:'DELETE'}); sessionStorage.setItem('site-notice','Record permanently deleted.'); Site.navigate('/'); }
     catch(error) { Site.showError(dialog,error); } finally { button.disabled=false; }
   });
-  document.querySelector('[data-logout]')?.addEventListener('submit', async event => { event.preventDefault(); try { await Site.request('/auth/logout',{method:'POST'}); location.assign('/'); } catch(error) { Site.toast(error.message,true); } });
+  document.querySelector('[data-logout]')?.addEventListener('submit', async event => { event.preventDefault(); try { await Site.request('/auth/logout',{method:'POST'}); Site.navigate('/'); } catch(error) { Site.toast(error.message,true); } });
   const notice=sessionStorage.getItem('site-notice'); if(notice){ sessionStorage.removeItem('site-notice'); Site.toast(notice); }
 });

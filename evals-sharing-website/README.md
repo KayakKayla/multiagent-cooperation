@@ -14,14 +14,14 @@ Windows PowerShell:
 
 ```powershell
 $env:EVALS_DATA_DIR = "$PWD/.data"
-.venv/Scripts/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+.venv/Scripts/python -m app.cli serve
 ```
 
 Linux/macOS:
 
 ```bash
 export EVALS_DATA_DIR="$PWD/.data"
-.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+.venv/bin/python -m app.cli serve
 ```
 
 Open [the local archive](http://127.0.0.1:8000). Stop it with Ctrl+C. If your setup
@@ -53,8 +53,10 @@ Then use the launch commands above. Public reads work without OAuth
 credentials. The development directory `.data` is ignored; production state must
 live outside the checkout. Install editable from the source checkout so templates,
 static files, and migrations remain alongside `app/`; standalone wheel deployment
-is not supported. Keep `--no-access-log` when starting Uvicorn: its default request
-log includes OAuth callback query parameters containing authorization code/state.
+is not supported. The `serve` command binds loopback, configures the public path
+prefix and disables access logs so OAuth callback code/state is not logged. If
+launching Uvicorn directly, set the matching `--root-path` for a subpath and keep
+`--no-access-log`.
 
 To seed a public synthetic preview without granting browser access:
 
@@ -73,8 +75,12 @@ directories; browser write QA requires an approved GitHub sign-in.
 Register a GitHub OAuth App with callback `<EVALS_BASE_URL>/auth/callback`.
 Configure `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, and a comma-separated
 `GITHUB_ALLOWED_IDS` containing the five **numeric stable account IDs**.
-Set `EVALS_BASE_URL` to the exact HTTPS origin in production (HTTP is accepted
-only on loopback). Username changes do not grant/revoke access. An account must
+Set `EVALS_BASE_URL` to the exact HTTPS site URL in production, including any
+prefix, such as `https://rowan.gaertner.ca/sims` (HTTP is accepted only on loopback).
+The proxy must strip `/sims` before forwarding; `serve` derives ASGI root_path
+from this URL. Sessions are scoped to `/sims/`; CSRF compares the origin separately
+from the path. Root deployment still uses an origin without a prefix.
+Username changes do not grant/revoke access. An account must
 also be locally active. Restart after changing configuration.
 
 Authlib manages OAuth state and S256 PKCE. Scope `read:user` accesses identity,
@@ -89,6 +95,10 @@ header and supplied Origin, and uses local session expiry/revocation.
 See [architecture](docs/architecture.md), [the format](docs/format-and-export.md), and
 [operations](docs/operations.md). The [implementation plan](docs/implementation-plan.md)
 records scope and research limitations.
+
+Deployment examples support an existing Apache HTTPS host or a new Caddy host.
+The selected Apache setup serves `/sims/` on the existing HTTPS hostname. Keep
+the root site intact; see the operations guide before adding that path mapping.
 
 - Public pages: `/`, `/evaluations/<id>`, `/training-runs/<id>`.
 - Metadata lists: `GET /api/evaluations`, `GET /api/training-runs`, with `q`,

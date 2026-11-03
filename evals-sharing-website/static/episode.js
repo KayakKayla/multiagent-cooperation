@@ -8,13 +8,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const ticket=++serial; controller?.abort();controller=new AbortController();viewer?.destroy();viewer=null;root.replaceChildren();metrics.replaceChildren();select.value=String(index);status.textContent='Loading selected episode…';
     updateURL(index,step);
     try {
-      const [response,html]=await Promise.all([Site.request(`/api/evaluations/${encodeURIComponent(host.dataset.evaluationId)}/episodes/${encodeURIComponent(index)}`,{signal:controller.signal}),fragment?Promise.resolve(fragment):fetch('/static/replay/viewer.html',{signal:controller.signal}).then(r=>{if(!r.ok)throw new Error('Replay controls could not be loaded.');return r.text();})]);
+      const [response,html]=await Promise.all([Site.request(`/api/evaluations/${encodeURIComponent(host.dataset.evaluationId)}/episodes/${encodeURIComponent(index)}`,{signal:controller.signal}),fragment?Promise.resolve(fragment):fetch(Site.path('/static/replay/viewer.html'),{signal:controller.signal}).then(r=>{if(!r.ok)throw new Error('Replay controls could not be loaded.');return r.text();})]);
       if(ticket!==serial)return;fragment=html;
       for(const [key,value]of Object.entries(response.episode.metrics??{})){const wrap=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=key.replaceAll('_',' ');dd.textContent=String(value);wrap.append(dt,dd);metrics.append(wrap);}
       if(!response.recording){status.textContent='Recording unavailable for this episode. Its recorded statistics remain available; no trajectory was reconstructed.';return;}
       status.textContent=`Episode ${Number(index)+1} · seed ${response.episode.seed??'unknown'} · ${response.episode.steps} recorded actions.`;
       // This fragment is a fixed, same-origin application asset, never uploaded HTML.
-      root.innerHTML=fragment;
+      const template=document.createElement('template');template.innerHTML=fragment;
+      for(const image of template.content.querySelectorAll('[data-replay-asset]'))image.src=Site.path('/static/replay/'+image.dataset.replayAsset);
+      root.replaceChildren(template.content);
       viewer=window.mountReplay(root,response.recording,{embedded:true,keyboardScoped:true,step,onStep:current=>updateURL(index,current)});
     }catch(error){if(error.name==='AbortError'||ticket!==serial)return;root.replaceChildren();status.textContent=`Recording could not be loaded: ${error.message}`;Site.toast(error.message,true);}
   }

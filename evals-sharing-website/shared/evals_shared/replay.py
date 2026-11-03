@@ -32,7 +32,7 @@ def write_replay(payload, path):
     viewer = (STATIC_ROOT / "viewer.html").read_text(encoding="utf-8")
     for name in ("kitchen-atlas.png", "sushi-atlas.png"):
         image = "data:image/png;base64," + base64.b64encode((STATIC_ROOT / name).read_bytes()).decode("ascii")
-        viewer = viewer.replace("/static/replay/" + name, image)
+        viewer = viewer.replace('data-replay-asset="' + name + '"', 'src="' + image + '"')
     style = (STATIC_ROOT / "viewer.css").read_text(encoding="utf-8")
     script = (STATIC_ROOT / "viewer.js").read_text(encoding="utf-8")
     document = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'

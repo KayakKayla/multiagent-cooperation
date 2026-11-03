@@ -2,16 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="base-path" content="{{ root_path|default('') }}">
 <meta name="csrf-token" content="{{ csrf_token|default('') }}">
 <title>{% block title %}SIMS · Evaluation sharing{% endblock %}</title>
-<link rel="stylesheet" href="/static/site.css">
+<link rel="stylesheet" href="{{ root_path|default('') }}/static/site.css">
 {% block head %}{% endblock %}
-<script src="/static/site.js" defer></script>
+<script src="{{ root_path|default('') }}/static/site.js" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
-<header class="site-header"><a class="brand" href="/">SIMS <span>Research records</span></a><nav aria-label="Account">
-{% if user %}<a href="/upload">Upload evaluation</a><span>{{ user.display_name or user.login }}</span><form action="/auth/logout" method="post" data-logout><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Sign out</button></form>{% else %}<a href="/auth/login">Sign in with GitHub</a>{% endif %}
+<header class="site-header"><a class="brand" href="{{ root_path|default('') }}/">SIMS <span>Research records</span></a><nav aria-label="Account">
+{% if user %}<a href="{{ root_path|default('') }}/upload">Upload evaluation</a><span>{{ user.display_name or user.login }}</span><form action="{{ root_path|default('') }}/auth/logout" method="post" data-logout><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Sign out</button></form>{% else %}<a href="{{ root_path|default('') }}/auth/login">Sign in with GitHub</a>{% endif %}
 </nav></header>
 <div id="toasts" class="toasts" aria-live="polite" aria-relevant="additions"></div>
 <main id="main" class="site-main">{% block content %}{% endblock %}</main>

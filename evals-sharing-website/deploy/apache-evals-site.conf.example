@@ -1,0 +1,36 @@
+# INCLUDE THIS SNIPPET INSIDE the EXISTING rowan.gaertner.ca *:443 VirtualHost.
+# Do not create a second same-name vhost, change certificates, or proxy site root.
+# Required modules: alias, proxy, proxy_http, headers, setenvif, log_config.
+# SSL remains managed by the existing HTTPS site.
+
+# IMPORTANT: exclude /sims from every existing query-bearing log. CustomLog can
+# use env=!sims_request (combine any existing condition rather than replacing it).
+# TransferLog accepts NO env argument: convert it to CustomLog with its SAME
+# effective LogFormat and the exclusion after inspecting the actual configuration.
+# Inspect server-wide GlobalLog too; this safe log does NOT replace other logs.
+SetEnvIf Request_URI "^/sims(?:/|$)" sims_request
+CustomLog ${APACHE_LOG_DIR}/sims-access.log "%h %t \"%m %U %H\" %>s %b %L" env=sims_request
+# Apache requires %M. Omit automatic Referer/header interpolation and keep the
+# existing ErrorLog destination; review inherited request/audit logs separately.
+ErrorLogFormat "[%t] [%m:%l] [pid %P] [request %L] %E %M"
+
+RedirectMatch permanent "^/sims$" "https://rowan.gaertner.ca/sims/"
+ProxyRequests Off
+# Both trailing slashes are deliberate: strip /sims/ before forwarding.
+ProxyPass /sims/ http://127.0.0.1:8001/
+ProxyPassReverse /sims/ http://127.0.0.1:8001/
+
+<Location "/sims/">
+    ProxyPreserveHost On
+    RequestHeader unset Forwarded
+    RequestHeader unset X-Forwarded-For
+    RequestHeader unset X-Forwarded-Host
+    RequestHeader set X-Forwarded-Proto "https"
+    RequestHeader set X-Forwarded-Port "443"
+    # Do not trust a client's asserted deployment prefix.
+    RequestHeader unset X-Forwarded-Prefix
+    # Exact 20 MiB defense where supported. Upstream Apache 2.4.41 bypasses this
+    # limit for reverse-proxy requests; the app enforces actual streamed bytes.
+    LimitRequestBody 20971520
+    LogLevel warn
+</Location>

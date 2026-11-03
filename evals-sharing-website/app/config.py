@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -26,13 +27,33 @@ class Settings:
         return urlparse(self.base_url).hostname
 
     @property
+    def root_path(self):
+        return urlparse(self.base_url).path.rstrip("/")
+
+    @property
+    def origin(self):
+        parsed = urlparse(self.base_url)
+        return f"{parsed.scheme}://{parsed.netloc}"
+
+    @property
+    def cookie_path(self):
+        return self.root_path + "/"
+
+    def app_path(self, path="/"):
+        """External site path; proxy strips root_path before ASGI routing."""
+        return self.root_path + "/" + path.lstrip("/")
+
+    @property
     def database_path(self):
         return self.data_dir / "evaluations.sqlite3"
 
     def prepare(self):
+        self.base_url = self.base_url.rstrip("/")
         parsed = urlparse(self.base_url)
-        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.path not in {"", "/"}:
-            raise ValueError("EVALS_BASE_URL must be an absolute HTTP(S) origin")
+        if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+            or parsed.username or parsed.password or parsed.query or parsed.fragment
+            or re.fullmatch(r"(?:/[A-Za-z0-9_-]+)*", parsed.path) is None):
+            raise ValueError("EVALS_BASE_URL must be an absolute HTTP(S) site URL with an optional simple path prefix")
         if parsed.scheme == "http" and parsed.hostname not in {"localhost", "127.0.0.1", "::1", "testserver"}:
             raise ValueError("HTTPS is required outside localhost")
         self.data_dir.mkdir(parents=True, exist_ok=True)

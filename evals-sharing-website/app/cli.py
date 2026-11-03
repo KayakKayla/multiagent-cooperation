@@ -69,6 +69,8 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("migrate")
     sub.add_parser("cleanup")
+    p = sub.add_parser("serve", help="Serve loopback HTTP with the configured public path prefix")
+    p.add_argument("--port", type=int, default=8000)
     p = sub.add_parser("backup"); p.add_argument("destination")
     p = sub.add_parser("restore"); p.add_argument("source"); p.add_argument("destination")
     p = sub.add_parser("inspect-episode"); p.add_argument("evaluation_id"); p.add_argument("index", type=int)
@@ -77,6 +79,15 @@ def main():
     p.add_argument("file"); p.add_argument("--github-id", type=int, required=True); p.add_argument("--login", required=True)
     args = parser.parse_args()
     settings = Settings(); settings.prepare()
+    if args.command == "serve":
+        import uvicorn
+        # The ASGI server must supply root_path, not just the framework: mounted
+        # static routes need the external prefix in scope.path as Uvicorn builds it.
+        uvicorn.run("app.main:app", host="127.0.0.1", port=args.port, workers=1,
+                    root_path=settings.root_path, proxy_headers=True,
+                    forwarded_allow_ips="127.0.0.1", access_log=False,
+                    timeout_keep_alive=5)
+        return
     if args.command == "migrate":
         migrate(settings); return
     if args.command == "backup":
@@ -112,7 +123,7 @@ def main():
                 db.add(user); db.flush()
             result, duplicate = import_document(db, doc, user.id)
             db.commit()
-            print(json.dumps({"id": result.id, "url": f"/evaluations/{result.id}", "duplicate": duplicate}))
+            print(json.dumps({"id": result.id, "url": settings.app_path(f"/evaluations/{result.id}"), "duplicate": duplicate}))
     engine.dispose()
 
 

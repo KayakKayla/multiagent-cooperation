@@ -5,6 +5,7 @@ from collections import defaultdict, deque
 from fastapi import HTTPException
 from sqlalchemy import select, delete
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette._utils import get_route_path
 from .models import LoginSession, User
 
 COOKIE = "evals_session"
@@ -31,6 +32,9 @@ class Sessions(BaseHTTPMiddleware):
                         if user and user.active and user.github_id in request.app.state.settings.allowed_github_ids:
                             request.state.user = user
         request.scope.setdefault("session", {})
+        # A mounted StaticFiles app extends scope.root_path while routing, so
+        # preserve the top-level route path before downstream scope changes.
+        route_path = get_route_path(request.scope)
         response = await call_next(request)
         # Authlib changes request.session during OAuth authorization/callback.
         session = request.state.session
@@ -44,9 +48,9 @@ class Sessions(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
         response.headers["X-Frame-Options"] = "DENY"
-        if request.url.path.startswith(("/api/", "/auth/", "/upload")) or request.state.user:
+        if route_path.startswith(("/api/", "/auth/", "/upload")) or request.state.user:
             response.headers["Cache-Control"] = "no-store"
-        elif request.url.path.startswith("/static/"):
+        elif route_path.startswith("/static/"):
             response.headers["Cache-Control"] = "public, max-age=86400"
         return response
 
@@ -60,7 +64,7 @@ def new_session(db, settings, user_id=None):
 
 
 def set_cookie(response, token, settings):
-    response.set_cookie(COOKIE, token, max_age=settings.session_seconds, secure=settings.secure_cookie, httponly=True, samesite="lax", path="/")
+    response.set_cookie(COOKIE, token, max_age=settings.session_seconds, secure=settings.secure_cookie, httponly=True, samesite="lax", path=settings.cookie_path)
 
 
 def require_user(request):
@@ -70,7 +74,7 @@ def require_user(request):
     session = request.state.session
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
         origin = request.headers.get("origin")
-        if origin and origin.rstrip("/") != request.app.state.settings.base_url:
+        if origin and origin.rstrip("/") != request.app.state.settings.origin:
             raise HTTPException(403, "Untrusted request origin")
         csrf = request.headers.get("x-csrf-token", "")
         if not session or not secrets.compare_digest(csrf, session.csrf_token):

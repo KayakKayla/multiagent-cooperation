@@ -15,12 +15,12 @@ class Element{
   querySelector(selector){return this.querySelectorAll(selector)[0]??null;}
   querySelectorAll(selector){const matches=el=>selector==='[type=submit]'?el.type==='submit':selector==='.form-error'?el.className==='form-error':selector==='[data-source-run]'?'sourceRun'in el.dataset:selector==='[data-run-association]'?'runAssociation'in el.dataset:selector==='[data-checkpoint-association]'?'checkpointAssociation'in el.dataset:selector==='[data-run-name]'?'runName'in el.dataset:selector==='[data-run-notes]'?'runNotes'in el.dataset:false;return this.children.flatMap(el=>typeof el==='string'?[]:[...(matches(el)?[el]:[]),...el.querySelectorAll(selector)]);}
 }
-function boot(matches={training_runs:{},checkpoints:{}}, omittedProgress=false){
+function boot(matches={training_runs:{},checkpoints:{}}, omittedProgress=false, basePath='', resultURL='/evaluations/e1'){
   const upload=new Element('form'),review=new Element('form'),runHost=new Element('div'),checkpointHost=new Element('div'),summary=new Element('p'),file=new Element('input');file.files=[{name:'evaluation.json',size:100}];
   for(const form of[upload,review]){const button=new Element('button');button.type='submit';const error=new Element('p');error.className='form-error';form.append(button,error);}
   review.append(runHost,checkpointHost);review.elements={title:new Element('input'),notes:new Element('textarea')};
   const ids={'upload-form':upload,'review-form':review,'run-associations':runHost,'checkpoint-associations':checkpointHost,'review-summary':summary,'evaluation-file':file};
-  const doc={createElement:tag=>new Element(tag),createTextNode:text=>String(text),getElementById:id=>ids[id],addEventListener(_event,fn){this.ready=fn;}};
+  const doc={querySelector:selector=>selector==='meta[name="base-path"]'?{content:basePath}:null,createElement:tag=>new Element(tag),createTextNode:text=>String(text),getElementById:id=>ids[id],addEventListener(_event,fn){this.ready=fn;}};
   const run={source_run_id:'unfamiliar-run',name:'Uploaded policy',progress_unit:'environment_steps',notes:''};
   const cp={source_checkpoint_id:'unfamiliar-checkpoint',source_run_id:run.source_run_id,progress:100,sha256:'a'.repeat(64)};
   const data={id:'preview',expires_at:2000000000,episode_count:2,recording_count:2,document:{environment:{layout:'demo'},participants:[{agent_id:'a0',source_checkpoint_id:cp.source_checkpoint_id}]},training_runs:[run],checkpoints:[cp],matches,existing_runs:[{id:'run-1',name:'Baseline'}],existing_checkpoints:[
@@ -28,9 +28,10 @@ function boot(matches={training_runs:{},checkpoints:{}}, omittedProgress=false){
     {id:'wrong-progress',run_id:'run-1',label:'Baseline · 200 environment_steps',progress:200,sha256:cp.sha256},
     {id:'incompatible',run_id:'other-run',label:'Unrelated model · 100 environment_steps',progress:100,sha256:cp.sha256}],checkpoint_suggestions:{[cp.source_checkpoint_id]:['candidate-1','wrong-progress']}};
   if(omittedProgress){delete cp.progress;data.existing_checkpoints[0].progress=null;}
-  const requests=[];const context={document:doc,Option:class extends Element{constructor(label,value,_default=false,selected=false){super('option');this.textContent=label;this.value=value;this.selected=selected;}},Site:{request:async(url,options)=>{requests.push({url,options});return url==='/api/uploads'?data:{url:'/evaluations/e1'};},toast(){},showError(_form,error){throw error;}},sessionStorage:{setItem(){}},location:{assign(){}},Date,Map,Set};
+  const requests=[],navigation=[];const context={document:doc,Option:class extends Element{constructor(label,value,_default=false,selected=false){super('option');this.textContent=label;this.value=value;this.selected=selected;}},Site:{request:async(url,options)=>{requests.push({url,options});return url==='/api/uploads'?data:{url:resultURL};},toast(){},showError(_form,error){throw error;}},sessionStorage:{setItem(){}},location:{assign(value){navigation.push(value);}},Date,Map,Set};
+  const stubSite=context.Site;context.window=context;vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../static/site.js'),'utf8'),context);Object.assign(context.Site,stubSite);
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../static/upload.js'),'utf8'),context);doc.ready();
-  return{upload,review,runHost,checkpointHost,requests};
+  return{upload,review,runHost,checkpointHost,requests,navigation};
 }
 
 test('suggested exact checkpoint explains run and requires explicit unfamiliar-run association',async()=>{
@@ -59,4 +60,14 @@ test('omitted checkpoint progress matches an unknown-progress exact candidate',a
   assert.equal(cp.children.length,2);assert.equal(cp.value,'candidate-1');assert.equal(cp.children[1].disabled,false);
   await ui.review.fire('submit');const body=JSON.parse(ui.requests[1].options.body);
   assert.equal(body.checkpoint_associations['unfamiliar-checkpoint'],'candidate-1');
+});
+
+
+test('upload links and successful imports stay below prefix for either API URL convention',async()=>{
+  for(const base of ['', '/sims'])for(const apiURL of ['/evaluations/e1',base+'/evaluations/e1']){
+    const ui=boot({training_runs:{},checkpoints:{}},false,base,apiURL);await ui.upload.fire('submit');
+    const help=ui.checkpointHost.children[0].children.find(child=>child.tag==='p'&&child.children?.some(node=>node.tag==='a'));
+    const link=help.children.find(node=>node.tag==='a');assert.equal(link.href,base+'/training-runs/run-1');
+    await ui.review.fire('submit');assert.deepEqual(ui.navigation,[base+'/evaluations/e1']);
+  }
 });

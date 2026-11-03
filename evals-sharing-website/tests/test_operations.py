@@ -47,10 +47,21 @@ def test_restore_does_not_resurrect_revoked_access_or_pending_uploads(tmp_path):
     app.state.engine.dispose()
 
 
-def test_documented_uvicorn_startups_omit_sensitive_access_logs():
+def test_documented_startups_use_prefix_aware_safe_launcher(tmp_path, monkeypatch):
     root = Path(__file__).resolve().parent.parent
     starts = []
     for path in [root / "README.md", root / "deploy" / "evals-site.service"]:
-        starts.extend(line for line in path.read_text().splitlines() if "-m uvicorn " in line)
+        starts.extend(line for line in path.read_text().splitlines() if "-m app.cli serve" in line)
     assert len(starts) == 3
-    assert all("--no-access-log" in line for line in starts)
+    from app.cli import main
+    from unittest.mock import Mock
+    import uvicorn
+    run = Mock()
+    monkeypatch.setattr(uvicorn, "run", run)
+    monkeypatch.setenv("EVALS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("EVALS_BASE_URL", "https://testserver/sims")
+    monkeypatch.setattr("sys.argv", ["evals-site", "serve"])
+    main()
+    run.assert_called_once_with("app.main:app", host="127.0.0.1", port=8000,
+        workers=1, root_path="/sims", proxy_headers=True,
+        forwarded_allow_ips="127.0.0.1", access_log=False, timeout_keep_alive=5)

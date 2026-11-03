@@ -38,7 +38,7 @@ document.addEventListener('DOMContentLoaded', () => {
         help.append(document.createTextNode('Exact checkpoint candidates (weights hash, progress, and training settings match): '));
         for(const [i,candidate]of candidates.entries()){
           if(i)help.append(document.createTextNode('; '));
-          const link=element('a',candidate.label);link.href=`/training-runs/${encodeURIComponent(candidate.run_id)}`;help.append(link);
+          const link=element('a',candidate.label);link.href=Site.path(`/training-runs/${encodeURIComponent(candidate.run_id)}`);help.append(link);
         }
         help.append(document.createTextNode('. To reuse a candidate from an unfamiliar source identity, explicitly select its training run above and then select the checkpoint.'));
       }else help.textContent='No compatible exact checkpoint candidates. Register this checkpoint with the reviewed training run.';
@@ -56,7 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const conflict=data.conflicts??[];review.querySelector('[type=submit]').disabled=conflict.length>0;
     if(conflict.length){review.querySelector('.form-error').textContent=conflict.join('\n');Site.toast('Source metadata conflicts must be corrected before import.',true);}
-    if(data.duplicate_id){const p=element('p','This source evaluation is already published. '),a=element('a','View existing evaluation');a.href=`/evaluations/${encodeURIComponent(data.duplicate_id)}`;p.append(a);checkpoints.prepend(p);}
+    if(data.duplicate_id){const p=element('p','This source evaluation is already published. '),a=element('a','View existing evaluation');a.href=Site.path(`/evaluations/${encodeURIComponent(data.duplicate_id)}`);p.append(a);checkpoints.prepend(p);}
     review.scrollIntoView({block:'start',behavior:'auto'});review.elements.title.focus();
   }
   upload.addEventListener('submit',async event=>{
@@ -72,6 +72,6 @@ document.addEventListener('DOMContentLoaded', () => {
     review.querySelectorAll('[data-run-association]').forEach(el=>body.run_associations[el.dataset.runAssociation]=el.value);
     review.querySelectorAll('[data-checkpoint-association]').forEach(el=>body.checkpoint_associations[el.dataset.checkpointAssociation]=el.value);
     for(const group of review.querySelectorAll('[data-source-run]'))body.run_annotations[group.dataset.sourceRun]={name:group.querySelector('[data-run-name]').value,notes:group.querySelector('[data-run-notes]').value};
-    try{const result=await Site.request('/api/imports',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!/^\/evaluations\/[a-zA-Z0-9_-]+$/.test(result.url))throw new Error('Import returned an invalid evaluation link.');sessionStorage.setItem('site-notice',result.duplicate?'This evaluation was already published.':'Evaluation published.');location.assign(result.url);}catch(error){Site.showError(review,error);button.disabled=false;}
+    try{const result=await Site.request('/api/imports',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const resultURL=Site.recordURL(result.url,'evaluations');sessionStorage.setItem('site-notice',result.duplicate?'This evaluation was already published.':'Evaluation published.');Site.navigate(resultURL);}catch(error){Site.showError(review,error);button.disabled=false;}
   });
 });

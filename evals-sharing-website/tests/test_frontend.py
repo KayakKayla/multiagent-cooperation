@@ -126,6 +126,9 @@ class FrontendTests(unittest.TestCase):
     def test_client_upload_checkpoint_suggestions_require_reviewed_run(self):
         subprocess.run(['node','--test',str(ROOT/'tests/upload-behavior.cjs')],check=True,capture_output=True)
 
+    def test_client_selected_episode_prefix_and_artwork_paths(self):
+        subprocess.run(['node','--test',str(ROOT/'tests/episode-behavior.cjs')],check=True,capture_output=True)
+
     def test_javascript_parses(self):
         for script in (ROOT/'static').rglob('*.js'):
             subprocess.run(['node','--check',str(script)],check=True,capture_output=True)

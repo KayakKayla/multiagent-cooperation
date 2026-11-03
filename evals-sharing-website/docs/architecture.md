@@ -8,6 +8,13 @@ maps each recording column as deferred with raiseload; only the selected-episode
 route explicitly requests that blob. A storage helper checks gzip encoding,
 uncompressed size, and SHA-256 before returning ordinary JSON.
 
+`EVALS_BASE_URL` records the full public URL, optionally including a path such as
+`/sims`. The proxy strips that prefix before forwarding. The `serve` launcher
+passes it to Uvicorn's root_path so ASGI routing, mounted static files and generated
+URLs retain the external prefix. The framework uses the same configured prefix.
+The HTTP origin is derived separately for CSRF checks; session cookies are scoped
+to the site's path (for example `/sims/`). Root deployments keep an empty prefix.
+
 The research tables are users, training_runs, policies, evaluations,
 evaluation_participants, and episodes. Internal tables hold server-side sessions,
 expiring upload previews, and run/checkpoint source aliases. Alembic's frozen
