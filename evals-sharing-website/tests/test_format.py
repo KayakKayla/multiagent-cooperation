@@ -81,6 +81,31 @@ class FormatTests(unittest.TestCase):
         metadata = portable_metadata({"SOURCE_RUN": "/home/person/model", "dataset_path": "private", "settings": {"SEED": 42}, "notes": "file /mnt/c/Users/person/model", "backend": "cpu"})
         self.assertEqual(metadata, {"settings": {"SEED": 42}, "notes": "redacted-local-reference", "backend": "cpu"})
 
+    def test_frozen_sushi_training_config_exports_without_losing_observation_mode(self):
+        config_path = Path(__file__).resolve().parents[2] / "model/oc2_sushi_1_3/policy-spawn-v8/config.json"
+        config = portable_metadata(json.loads(config_path.read_text(encoding="utf-8")))
+        self.assertEqual(config["IMITATION"]["observations"], "full_map")
+        document = fixture()
+        document["training_runs"][0]["config"] = config
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "evaluation.json"
+            write_document(path, document)
+            self.assertEqual(parse_document(path.read_bytes()), document)
+
+    def test_observation_labels_do_not_allow_raw_observations_or_other_excluded_fields(self):
+        for value in ([], [[1, 2]], {"agent_0": [1, 2]}, 1, True, None):
+            with self.subTest(value=value):
+                document = fixture()
+                document["training_runs"][0]["config"]["observations"] = value
+                with self.assertRaisesRegex(ValidationError, "observations"):
+                    validate_document(document)
+        for field in ("weights", "params", "activations", "optimizer", "images", "frames"):
+            with self.subTest(field=field):
+                document = fixture()
+                document["training_runs"][0]["config"].update(observations="full_map", **{field: "excluded"})
+                with self.assertRaisesRegex(ValidationError, field):
+                    validate_document(document)
+
     def test_database_scalars_are_bounded_and_never_coerced(self):
         for field, values in (("algorithm", ({}, [], True, 123, "", "x"*129)),
                               ("seed", ({}, [], True, 1.0, "42", -1, 2**80))):

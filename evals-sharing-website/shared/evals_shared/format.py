@@ -53,7 +53,10 @@ def _walk(value):
             _require(len(item) <= 4096, "Object has too many fields")
             for key, child in item.items():
                 _require(isinstance(key, str) and len(key) <= 256, "Invalid object key")
-                _require(key.lower() not in _FORBIDDEN, f"Excluded executable/media/model field: {key}")
+                # Training config can describe its observation mode ("full_map").
+                # Raw observation arrays/objects remain excluded.
+                observation_label = key.lower() == "observations" and isinstance(child, str)
+                _require(key.lower() not in _FORBIDDEN or observation_label, f"Excluded executable/media/model field: {key}")
                 pending.append((child, depth + 1))
         elif isinstance(item, list):
             _require(len(item) <= MAX_STEPS + 1, "Array exceeds sanity limit")
