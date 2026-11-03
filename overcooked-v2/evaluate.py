@@ -17,6 +17,12 @@ from jaxmarl.environments.overcooked_v2.common import (
     OvercookedActionsEnum,
     StaticObject,
 )
+from critic_probe import (
+    VALUE_WARNING,
+    build_probe_payload,
+    make_probe_runner,
+    protocol_metadata,
+)
 from preview import save_preview
 from train import DEFAULT_CONFIG, SCRIPT_DIR, load_baseline
 
@@ -54,8 +60,13 @@ def delivery_counts(before, after, actions):
     return jnp.sum(delivered & correct_recipe), jnp.sum(delivered & ~correct_recipe)
 
 
-def make_episode(module, config, env, network):
-    """Compile playback only: sample actions, advance the kitchen, record events."""
+def make_episode(module, config, env, network, probe=False):
+    """Compile playback only: sample actions, advance the kitchen, record events.
+
+    With probe=True, also retain the critic value, pre-action observation,
+    recurrent memory, and simulator key for every state.  Action sampling and
+    the simulator's random-number consumption are unchanged.
+    """
     @jax.jit
     def play(params, seed):
         key, reset_key = jax.random.split(jax.random.PRNGKey(seed))
@@ -70,11 +81,11 @@ def make_episode(module, config, env, network):
             # Shared weights, separate memory for each chef; reset memory each episode.
             obs_batch = jnp.stack([observations[agent] for agent in env.agents])
             inputs = (obs_batch[None], jnp.full((1, env.num_agents), state.done))
-            hidden, policy, _ = network.apply(params, hidden, inputs)
+            next_hidden, policy, value = network.apply(params, hidden, inputs)
             actions = policy.sample(seed=action_key)[0]
             action_dict = {agent: actions[i] for i, agent in enumerate(env.agents)}
             # step_env retains the final kitchen, whereas env.step auto-resets it.
-            observations, after, rewards, _, _ = env.step_env(
+            next_observations, after, rewards, _, _ = env.step_env(
                 step_key, state, action_dict
             )
             correct, wrong = delivery_counts(state, after, actions)
@@ -82,12 +93,67 @@ def make_episode(module, config, env, network):
             reward = rewards[env.agents[0]]
             finite = jnp.all(jnp.isfinite(policy.probs))
             trace = (after, actions, reward, correct, wrong, finite)
-            return (observations, after, hidden, key), trace
+            if probe:
+                # No extra RNG calls: this is the same key the factual transition
+                # used, and the value is the critic already computed for the policy.
+                probe_trace = (observations, hidden, value[0], step_key)
+                return (next_observations, after, next_hidden, key), (
+                    trace,
+                    probe_trace,
+                )
+            return (next_observations, after, next_hidden, key), trace
 
-        _, trace = jax.lax.scan(
-            step, (observations, initial, hidden, key), None, env.max_steps
+        carry = (observations, initial, hidden, key)
+        if probe:
+            carry, (trace, probe_trace) = jax.lax.scan(
+                step, carry, None, env.max_steps
+            )
+        else:
+            _, trace = jax.lax.scan(step, carry, None, env.max_steps)
+        if not probe:
+            return initial, trace
+
+        observations, after, hidden, _ = carry
+        pre_observations, pre_hidden, values, step_keys = probe_trace
+        # Value the actual terminal state once, with the terminal done flag.  It
+        # is recorded for display but never used as a bootstrap target.
+        obs_batch = jnp.stack([observations[agent] for agent in env.agents])
+        _, _, terminal_value = network.apply(
+            params,
+            hidden,
+            (obs_batch[None], jnp.full((1, env.num_agents), after.done)),
         )
-        return initial, trace
+        states, actions, rewards, _, _, _ = trace
+        observation_timeline = jnp.stack(
+            [
+                jnp.concatenate(
+                    (pre_observations[agent], observations[agent][None]), axis=0
+                )
+                for agent in env.agents
+            ],
+            axis=1,
+        )
+        hidden_timeline = jnp.concatenate((pre_hidden, hidden[None]), axis=0)
+        value_timeline = jnp.concatenate(
+            (values, terminal_value[0][None]), axis=0
+        )
+        return initial, trace, {
+            "states": jax.tree.map(
+                lambda first, rest: (
+                    None if first is None and rest is None else
+                    jnp.concatenate((jnp.expand_dims(first, 0), rest), axis=0)
+                ),
+                initial,
+                states,
+            ),
+            "observations": observation_timeline,
+            "hidden": hidden_timeline,
+            "values": value_timeline,
+            "actions": actions,
+            "rewards": rewards,
+            "dones": states.done,
+            "step_keys": step_keys,
+        }
 
     return play
 
@@ -105,6 +171,13 @@ def main():
     parser.add_argument(
         "--eval-seed", type=int, default=1000,
         help="First test seed; independent of training.",
+    )
+    parser.add_argument(
+        "--critic-probe", action="store_true",
+        help=(
+            "Also save experimental one-step critic diagnostics for every "
+            "episode (episode-N-critic.json) and embed the first in replay.html."
+        ),
     )
     args = parser.parse_args()
     if args.episodes < 1 or not 0 <= args.eval_seed <= 2**32 - args.episodes:
@@ -139,6 +212,10 @@ def main():
         # Keep the actual before weights, not just an initialization seed.
         (output / "params.msgpack").write_bytes(checkpoint_bytes)
     seeds = list(range(args.eval_seed, args.eval_seed + args.episodes))
+    probe_files = (
+        [f"episode-{index}-critic.json" for index in range(len(seeds))]
+        if args.critic_probe else []
+    )
     protocol = {
         "policy": mode, "source_run": str(run) if run else None,
         "policy_sha256": hashlib.sha256(checkpoint_bytes).hexdigest(),
@@ -149,16 +226,30 @@ def main():
         "replay_file": "replay.html", "replay_schema_version": 1,
         "replay_stride": 1, "replay_frame_ms": 100,
     }
+    if args.critic_probe:
+        protocol["critic_probe"] = protocol_metadata(probe_files)
     (output / "protocol.json").write_text(json.dumps(protocol, indent=2) + "\n")
     print(
         f"Evaluating {mode} policy, {len(seeds)} episodes; no training. Results: {output}",
         flush=True,
     )
-    play = make_episode(module, config, env, network)
+    if args.critic_probe:
+        print(f"Critic probe: {VALUE_WARNING}", flush=True)
+    play = make_episode(module, config, env, network, probe=args.critic_probe)
+    probe_runner = (
+        make_probe_runner(env, network)
+        if args.critic_probe else None
+    )
     rows = []
     recorded = None
+    recorded_probe = None
     for episode, seed in enumerate(seeds):
-        initial, trace = jax.device_get(play(params, np.uint32(seed)))
+        if args.critic_probe:
+            initial, trace, probe_inputs = jax.device_get(
+                play(params, np.uint32(seed))
+            )
+        else:
+            initial, trace = jax.device_get(play(params, np.uint32(seed)))
         states, actions, rewards, correct, wrong, finite = trace
         if not finite.all() or not np.isfinite(rewards).all() or not bool(states.done[-1]):
             raise ValueError("Invalid policy predictions, rewards, or unfinished episode.")
@@ -169,6 +260,32 @@ def main():
         }
         rows.append(row)
         print(f"Episode {episode + 1}/{len(seeds)}: {row}", flush=True)
+        if args.critic_probe:
+            result = jax.device_get(
+                probe_runner(
+                    params,
+                    probe_inputs["states"],
+                    probe_inputs["observations"],
+                    probe_inputs["hidden"],
+                    probe_inputs["values"],
+                    probe_inputs["actions"],
+                    probe_inputs["rewards"],
+                    probe_inputs["dones"],
+                    probe_inputs["step_keys"],
+                )
+            )
+            payload = build_probe_payload(
+                probe_inputs["values"],
+                probe_inputs["actions"],
+                probe_inputs["rewards"],
+                probe_inputs["dones"],
+                result,
+            )
+            (output / probe_files[episode]).write_text(
+                json.dumps(payload, indent=2, allow_nan=False) + "\n"
+            )
+            if episode == 0:
+                recorded_probe = payload
         if episode == 0:
             recorded = (initial, trace)
 
@@ -178,7 +295,9 @@ def main():
         writer.writerows(rows)
     # Always record the first episode; do not pick whichever looks most successful.
     print("Rendering the first episode with spectator counters.", flush=True)
-    save_preview(*recorded, output, config, mode, seeds[0])
+    save_preview(
+        *recorded, output, config, mode, seeds[0], critic_probe=recorded_probe
+    )
     summary = {
         "status": "complete", "policy": mode, "episodes": len(rows),
         "mean_team_reward": float(np.mean([row["team_reward"] for row in rows])),
@@ -191,6 +310,11 @@ def main():
     print(json.dumps(summary, indent=2), flush=True)
     print(f"Replay (open in a browser): {output / 'replay.html'}", flush=True)
     print(f"GIF: {output / 'rollout.gif'}", flush=True)
+    if args.critic_probe:
+        print(
+            f"Critic probes (experimental): {len(probe_files)} files under {output}",
+            flush=True,
+        )
 
 
 if __name__ == "__main__":

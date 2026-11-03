@@ -39,7 +39,8 @@ def inventory_name(value):
     return "onion" if value == DynamicObject.ingredient(0) else "ingredient"
 
 
-def build_replay_data(states, actions, rewards, correct, wrong, config, mode, seed):
+def build_replay_data(states, actions, rewards, correct, wrong, config, mode, seed,
+                      critic_probe=None):
     """Describe each post-action state, including the action-free initial state."""
     count = len(actions)
     if any(len(values) != count for values in (rewards, correct, wrong)):
@@ -90,7 +91,7 @@ def build_replay_data(states, actions, rewards, correct, wrong, config, mode, se
                        "correct_dishes": int(totals[1][index]),
                        "wrong_dishes": int(totals[2][index])},
         })
-    return {
+    replay = {
         "schema_version": 1,
         "metadata": {
             "layout": config["ENV_KWARGS"]["layout"], "mode": mode,
@@ -104,6 +105,11 @@ def build_replay_data(states, actions, rewards, correct, wrong, config, mode, se
         },
         "steps": steps,
     }
+    # Optional and absent by default, so existing replay consumers see the
+    # unchanged payload unless an experiment explicitly supplies diagnostics.
+    if critic_probe is not None:
+        replay["critic_probe"] = critic_probe
+    return replay
 
 
 def render_replay_frames(states, radius):
@@ -116,7 +122,8 @@ def render_replay_frames(states, radius):
     return np.concatenate(batches)
 
 
-def save_preview(initial, trace, output: Path, config, mode, seed):
+def save_preview(initial, trace, output: Path, config, mode, seed, *,
+                 critic_probe=None):
     scripted = mode == "scripted"
     states, actions, rewards, correct, wrong, _ = trace
     # HTML retains every step; only the legacy GIF samples every second step.
@@ -127,7 +134,8 @@ def save_preview(initial, trace, output: Path, config, mode, seed):
     radius = config["ENV_KWARGS"]["agent_view_size"]
     all_frames = render_replay_frames(states, radius)
     save_replay(build_replay_data(states, actions, rewards, correct, wrong,
-                                 config, mode, seed), all_frames, output)
+                                 config, mode, seed, critic_probe=critic_probe),
+                all_frames, output)
     frames = all_frames[indices]
     view = f"local {2 * radius + 1} x {2 * radius + 1}" if radius is not None else "full-kitchen"
     totals = [

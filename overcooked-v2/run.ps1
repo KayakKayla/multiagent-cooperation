@@ -8,14 +8,15 @@ param(
     [switch]$Untrained,
     [string]$Run = '',
     [int]$Episodes = 5,
-    [int]$EvalSeed = 1000
+    [int]$EvalSeed = 1000,
+    [switch]$CriticProbe
 )
 
 $ErrorActionPreference = 'Stop'
 $runArguments = @('./run.sh', $Mode)
 
-if ($Mode -ne 'evaluate' -and ($Untrained -or $Run -or $PSBoundParameters.ContainsKey('Episodes') -or $PSBoundParameters.ContainsKey('EvalSeed'))) {
-    throw '-Untrained, -Run, -Episodes and -EvalSeed are for evaluate mode.'
+if ($Mode -ne 'evaluate' -and ($Untrained -or $Run -or $CriticProbe -or $PSBoundParameters.ContainsKey('Episodes') -or $PSBoundParameters.ContainsKey('EvalSeed'))) {
+    throw '-Untrained, -Run, -CriticProbe, -Episodes and -EvalSeed are for evaluate mode.'
 }
 
 if ($Mode -eq 'train') {
@@ -52,6 +53,9 @@ if ($Mode -eq 'train') {
         $runArguments += @('--run', "$linuxRun")
     }
     $runArguments += @('--episodes', "$Episodes", '--eval-seed', "$EvalSeed")
+    if ($CriticProbe) {
+        $runArguments += '--critic-probe'
+    }
 } else {
     if ($DryRun) {
         throw '-DryRun is available with train mode.'

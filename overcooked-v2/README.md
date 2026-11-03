@@ -107,7 +107,8 @@ Each evaluation creates a new folder under `outputs/evaluate/` containing:
 - `summary.json`: averages and total deliveries across the episodes.
 - `config.json` and `protocol.json`: environment/model settings, test seeds, policy hash,
   source revision, and the recorded episode selection. An untrained evaluation also
-  saves its actual initial weights in `params.msgpack`.
+  saves its actual initial weights in `params.msgpack`. With `--critic-probe`,
+  `protocol.json` also records the probe definitions and per-episode file names.
 - `replay.html`: a self-contained browser replay with every simulator step, chef
   positions/facing/inventories/actions, numbered pots, deliveries, and raw team score.
 - `rollout.gif`, `initial.png`, and `final.png`: the existing annotated kitchen previews.
@@ -145,10 +146,61 @@ Linux equivalents: `bash overcooked-v2/run.sh evaluate --untrained`, then
 `bash overcooked-v2/run.sh evaluate --run outputs/train/<run-folder>` (the latter path is
 relative to `overcooked-v2`, since `run.sh` sets that working directory).
 
+### Experimental one-step critic probe
+
+For exploratory analysis of possible cooperation signals, add `--critic-probe` on
+Linux or `-CriticProbe` on Windows:
+
+```powershell
+.\overcooked-v2\run.ps1 evaluate -Untrained -CriticProbe
+.\overcooked-v2\run.ps1 evaluate -Run ".\overcooked-v2\outputs\train\<run-folder>" -CriticProbe
+```
+
+```bash
+bash overcooked-v2/run.sh evaluate --untrained --critic-probe
+bash overcooked-v2/run.sh evaluate --run outputs/train/<run-folder> --critic-probe
+```
+
+Without the flag, outputs and protocol metadata are unchanged. With it, evaluation
+saves one `episode-<index>-critic.json` per episode (`index` is zero-based and matches
+`episodes.csv`) and embeds the first episode's object in `replay.html` as the optional
+top-level `critic_probe` field. `protocol.json` records the definitions and the list of
+files. Scores and recorded actions are the same real evaluation results; the probe only
+adds diagnostics.
+
+Each probe file contains the shared raw-reward description, the six simulator action
+names in code order, and one entry per replay state (including the terminal state).
+Every step has both chefs' current critic values, the recorded `actual_actions` (null
+at the terminal state), and, for each chef, one-step `interventions` in which only that
+chef's action changes while the teammate's recorded action stays fixed. The simulator
+state is cloned and the factual transition's random key is reused; the recorded rollout
+and its random-number stream are untouched.
+
+For a transition from state `t` to `t+1`, the baseline uses the recorded action and
+reports the **target chef's** critic value at `t+1` as `next_value`. Alternatives list
+all six actions and report `next_value`, plus the raw `reward` and `done` as context.
+The primary signal is
+`value_delta = alternative next_value - baseline next_value` (signed), so the
+recorded-action alternative has exactly zero delta. `value_delta` is a raw value-head
+difference, not a reward-adjusted quantity. Metrics at state `t` describe the outgoing
+transition to `t+1`; this differs from the replay's displayed "latest action" at state
+`t`. The terminal state reports both chefs' raw current values as diagnostics only: it
+has no outgoing action, no interventions, and no bootstrap or future-return
+interpretation. The last transition's `next_value` is that diagnostic terminal value;
+no future return is added to it.
+
+This is an experimental value-head probe. It does not prove cooperation, estimate a
+return, or causally explain a rollout. Training rewards included shaping bonuses
+(annealed over training), so a trained critic may have learned shaped values, and an
+untrained critic's differences are essentially arbitrary. Treat deltas as descriptive
+signals, apply the same probe settings when comparing policies, and do not compare
+their magnitudes across differently trained critics or layouts.
+
 Replay data checks, using the installed simulator Python environment from this directory:
 `python -m unittest discover -s tests -v`. These check state/action alignment, delivery
-totals, pot status, the self-contained HTML payload, and the saved scripted replay
-against its full audit when that replay is available. No training is performed.
+totals, pot status, the self-contained HTML payload, the optional critic-probe
+invariants, and the saved scripted replay against its full audit when that replay is
+available. No training is performed.
 
 ## Scripted 18-soup reference
 

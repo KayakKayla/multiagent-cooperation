@@ -41,7 +41,39 @@
   #playback-status { margin-left: auto; color: #aebdd0; }
   .hint { font-size: 13px; margin-bottom: 0; }
   footer { font-size: 13px; margin-top: 20px; }
-  @media (max-width: 760px) { .scene { grid-template-columns: 1fr; } main { padding: 20px 14px; } #playback-status { margin-left: 0; } }
+  .critic-panel { margin-top: 24px; padding: 20px; border: 1px solid #334155; border-radius: 12px; background: #182332; }
+  .critic-panel[hidden], #critic-terminal[hidden], #critic-unavailable[hidden], #critic-intervention[hidden] { display: none !important; }
+  .critic-panel h2 { margin-bottom: 6px; }
+  .critic-panel h3 { margin: 0 0 10px; font-size: 16px; }
+  .critic-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+  .critic-value { padding: 12px 14px; border: 1px solid #334155; border-radius: 10px; background: #101722; }
+  .critic-value strong { display: block; margin-top: 4px; font-size: 22px; font-variant-numeric: tabular-nums; }
+  .critic-role { color: #aebdd0; font-size: 13px; }
+  .critic-selects { margin-bottom: 14px; }
+  .critic-selects label { color: #aebdd0; }
+  .critic-selects select { max-width: 100%; }
+  .critic-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+  .critic-grid .card { margin-bottom: 0; }
+  .critic-card-recording { border-color: #53657c; }
+  .critic-card-selected { border-color: #8bb9ff; }
+  .critic-grid .critic-card-note { margin: 0 0 12px; }
+  .critic-metrics { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 14px; margin: 0; font-size: 14px; }
+  .critic-metrics dt { color: #aebdd0; }
+  .critic-metrics dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .critic-metrics .critic-next-value { font-size: 18px; font-weight: 650; }
+  .critic-grid .critic-deltas { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid #334155; font-size: 14px; }
+  .critic-deltas span { display: inline-block; margin-right: 14px; white-space: nowrap; }
+  .critic-delta-label { color: #aebdd0; }
+  .critic-delta-primary { font-size: 18px; font-weight: 650; }
+  .critic-positive { color: #a7f3d0; }
+  .critic-negative { color: #ff9b9b; }
+  .critic-zero { color: #aebdd0; }
+  .critic-terminal { margin: 12px 0; padding: 12px 14px; border: 1px solid #53657c; border-radius: 8px; background: #101722; }
+  .critic-terminal p { margin: 0; }
+  .critic-note { margin-top: 16px; padding-top: 12px; border-top: 1px solid #334155; }
+  .critic-note p { margin: 0; font-size: 13px; line-height: 1.5; color: #aebdd0; }
+  #critic-limits-note strong { color: #fde68a; }
+  @media (max-width: 760px) { .scene { grid-template-columns: 1fr; } .critic-values, .critic-grid { grid-template-columns: 1fr; } main { padding: 20px 14px; } #playback-status { margin-left: 0; } }
 </style>
 </head>
 <body>
@@ -65,6 +97,44 @@
       <div id="pots"></div>
     </aside>
   </div>
+  <section id="critic-panel" class="critic-panel" aria-label="Value-head probe" hidden>
+    <h2 id="critic-heading">Value-head probe</h2>
+    <p class="muted hint" id="critic-meta"></p>
+    <p class="muted hint" id="critic-outgoing"></p>
+    <div class="critic-values" id="critic-values"></div>
+    <div id="critic-terminal" class="critic-terminal" hidden>
+      <p><strong>Terminal state, no outgoing action.</strong> Raw value-head outputs are diagnostic only—not future-return estimates; no value_delta is computed.</p>
+    </div>
+    <div id="critic-unavailable" class="critic-terminal" hidden>
+      <p>No one-step value-head probe was recorded for this state.</p>
+    </div>
+    <div id="critic-intervention" hidden>
+      <div class="control-row critic-selects">
+        <label for="critic-actor">Intervened chef</label>
+        <select id="critic-actor"></select>
+        <label for="critic-action">Alternative action</label>
+        <select id="critic-action"></select>
+        <span id="critic-teammate" class="muted"></span>
+      </div>
+      <div class="critic-grid">
+        <section class="card critic-card-recording" aria-labelledby="critic-baseline-heading">
+          <h3 id="critic-baseline-heading">Recorded outgoing move · baseline</h3>
+          <p id="critic-baseline-action" class="muted critic-card-note"></p>
+          <dl class="critic-metrics" id="critic-baseline"></dl>
+        </section>
+        <section class="card critic-card-selected" aria-labelledby="critic-alternative-heading">
+          <h3 id="critic-alternative-heading">Selected outgoing move · alternative</h3>
+          <p id="critic-alternative-action" class="muted critic-card-note"></p>
+          <dl class="critic-metrics" id="critic-alternative"></dl>
+          <p class="critic-deltas" id="critic-deltas"></p>
+        </section>
+      </div>
+      <p class="muted hint" id="critic-proxy-note"></p>
+    </div>
+    <div class="critic-note">
+      <p id="critic-limits-note"><strong>Limits:</strong> one step from the shared value head under local observations; no multi-step rollout branch, rescore, or extra simulator RNG. Values are only as reliable as the value head: reward-shaping training predicts shaped returns, and an untrained value head is near-random. value_delta is a possible signal, not causal evidence about long-term cooperation.</p>
+    </div>
+  </section>
   <section class="controls" aria-label="Replay controls">
     <div class="control-row">
       <strong id="step-label">Step 0</strong>
@@ -104,6 +174,244 @@
   let playing = false;
   let timer = null;
   const colors = {red: "#ff7b7b", blue: "#83b5ff", green: "#86efac", purple: "#c4b5fd", yellow: "#fde68a", orange: "#fdba74"};
+  const critic = data.critic_probe;
+  const criticActive = Boolean(
+    critic && Array.isArray(critic.action_names) && critic.action_names.length
+      && Array.isArray(critic.steps) && critic.steps.length === data.steps.length
+  );
+  let criticActor = 0;
+  let criticAction = null;
+  // Default to each step's recorded action; retain an explicitly chosen alternative while seeking.
+  let criticActionPinned = false;
+
+  // The value-head panel is additive: older and scripted payloads without probes stay hidden.
+  function finite(value) {
+    return typeof value === "number" && Number.isFinite(value);
+  }
+  function numberText(value, digits = 4) {
+    return finite(value) ? value.toFixed(digits) : "—";
+  }
+  function signedText(value, digits = 4) {
+    if (!finite(value)) return "—";
+    const text = Math.abs(value).toFixed(digits);
+    return value < 0 ? `-${text}` : `+${text}`;
+  }
+  function actionName(code) {
+    if (!Number.isInteger(code) || code < 0 || code >= critic.action_names.length) return "unknown";
+    return String(critic.action_names[code]);
+  }
+  function actionLabel(code) {
+    return Number.isInteger(code) ? `${actionName(code)} (code ${code})` : "unknown";
+  }
+  function chefName(state, index) {
+    const agent = state.agents[index];
+    return agent ? `Chef ${index} (${agent.color})` : `Chef ${index}`;
+  }
+  function criticValueCard(state, index, value, role, terminal, stepIndex) {
+    const node = document.createElement("div");
+    node.className = "critic-value";
+    node.dataset.chef = String(index);
+    node.dataset.value = String(value);
+    node.dataset.role = role || (terminal ? "terminal" : "");
+    const heading = document.createElement("div");
+    const agent = state.agents[index];
+    heading.textContent = chefName(state, index);
+    heading.style.color = agent ? colors[agent.color] || "#e8eef7" : "#e8eef7";
+    const label = document.createElement("span");
+    label.className = "critic-role";
+    label.textContent = terminal
+      ? "raw terminal value-head output · diagnostic only"
+      : `${role ? `${role} · ` : ""}current value-head output V(s_${stepIndex})`;
+    const number = document.createElement("strong");
+    number.textContent = numberText(value, 4);
+    node.append(heading, label, number);
+    return node;
+  }
+  function addMetric(parent, term, value, valueClass = "") {
+    const termNode = document.createElement("dt");
+    termNode.textContent = term;
+    const valueNode = document.createElement("dd");
+    valueNode.textContent = value;
+    if (valueClass) valueNode.className = valueClass;
+    parent.append(termNode, valueNode);
+  }
+  function renderCriticMetrics(parent, row, state, target) {
+    parent.dataset.nextValue = String(row.next_value);
+    parent.dataset.reward = String(row.reward);
+    parent.dataset.done = String(row.done);
+    parent.replaceChildren();
+    addMetric(parent, `Next-state value · ${chefName(state, target)}`, numberText(row.next_value, 6), "critic-next-value");
+    addMetric(parent, "Raw team reward · context", numberText(row.reward, 4));
+    addMetric(parent, "Next state done · context", row.done ? "yes" : "no");
+  }
+  function addDelta(parent, label, value, digits, primary = false) {
+    const node = document.createElement("span");
+    node.textContent = `${label}: ${signedText(value, digits)}`;
+    node.title = "Alternative next value minus baseline next value; value-head output only, not reward-adjusted.";
+    if (finite(value) && value > 0) node.classList.add("critic-positive");
+    else if (finite(value) && value < 0) node.classList.add("critic-negative");
+    else if (finite(value)) node.classList.add("critic-zero");
+    if (primary) {
+      node.id = "critic-value-delta";
+      node.classList.add("critic-delta-primary");
+    }
+    parent.append(node);
+  }
+  function initCriticControls() {
+    const actorSelect = get("critic-actor");
+    const actors = new Set();
+    for (const step of critic.steps) {
+      if (!step || !Array.isArray(step.interventions)) continue;
+      for (const item of step.interventions) {
+        if (item && (item.actor === 0 || item.actor === 1)) actors.add(item.actor);
+      }
+    }
+    if (!actors.size) { actors.add(0); actors.add(1); }
+    for (const code of [...actors].sort((a, b) => a - b)) {
+      const option = document.createElement("option");
+      option.value = String(code);
+      const agent = data.steps[0].agents.find(agent => agent.index === code);
+      option.textContent = agent ? `Chef ${code} (${agent.color})` : `Chef ${code}`;
+      actorSelect.append(option);
+    }
+    actorSelect.value = String(actors.has(0) ? 0 : [...actors][0]);
+    criticActor = Number(actorSelect.value);
+    const actionSelect = get("critic-action");
+    critic.action_names.forEach((name, code) => {
+      const option = document.createElement("option");
+      option.value = String(code);
+      option.textContent = `${name} (code ${code})`;
+      actionSelect.append(option);
+    });
+  }
+  function updateCriticActionOptions(recordedAction) {
+    const select = get("critic-action");
+    for (let code = 0; code < critic.action_names.length; code += 1) {
+      select.options[code].textContent =
+        `${critic.action_names[code]} (code ${code})${code === recordedAction ? " · recorded (no change)" : ""}`;
+    }
+  }
+  function renderCritic(index) {
+    if (!criticActive) return;
+    const state = data.steps[index];
+    const step = critic.steps[index];
+    const panel = get("critic-panel");
+    if (!state || !step || !Array.isArray(step.values)) {
+      panel.hidden = false;
+      get("critic-heading").textContent = "Value-head probe · unavailable";
+      get("critic-meta").textContent = "";
+      get("critic-outgoing").textContent = "No one-step value-head probe was recorded for this state.";
+      get("critic-values").replaceChildren();
+      get("critic-terminal").hidden = true;
+      get("critic-unavailable").hidden = false;
+      get("critic-intervention").hidden = true;
+      return;
+    }
+    panel.hidden = false;
+    const terminal = index === last || step.actual_actions === null;
+    panel.dataset.step = String(index);
+    panel.dataset.terminal = String(terminal);
+    let intervention = null;
+    if (!terminal && Array.isArray(step.interventions) && step.interventions.length) {
+      intervention = step.interventions.find(item => item && item.actor === criticActor)
+        || step.interventions.find(item => item && (item.actor === 0 || item.actor === 1));
+      if (intervention) criticActor = intervention.actor;
+    }
+    const actor = intervention ? intervention.actor : null;
+    const target = intervention && (intervention.target === 0 || intervention.target === 1)
+      ? intervention.target : (actor === null ? null : 1 - actor);
+    get("critic-heading").textContent = terminal
+      ? `Value-head probe · terminal state ${index}`
+      : `Value-head probe · outgoing move ${index} → ${index + 1}`;
+    get("critic-meta").textContent =
+      `Reward: ${String(critic.reward ?? "raw environment reward; no shaping")}`;
+    get("critic-outgoing").textContent = terminal
+      ? "No outgoing move to evaluate."
+      : "Value cards are at the displayed state. The comparison below is the other chef's outgoing next-state value, not the recorded last action shown in the chef cards.";
+    get("critic-values").replaceChildren();
+    for (let chef = 0; chef < 2; chef += 1) {
+      let role = "";
+      if (terminal) role = "terminal";
+      else if (chef === actor) role = "intervened chef";
+      else if (chef === target) role = "other chef · value head";
+      get("critic-values").append(
+        criticValueCard(state, chef, step.values[chef], role, terminal, index)
+      );
+    }
+    get("critic-terminal").hidden = !terminal;
+    get("critic-unavailable").hidden = terminal || Boolean(intervention);
+    get("critic-intervention").hidden = terminal || !intervention;
+    if (terminal || !intervention) {
+      get("critic-baseline").replaceChildren();
+      get("critic-alternative").replaceChildren();
+      get("critic-deltas").replaceChildren();
+      get("critic-baseline-action").textContent = "";
+      get("critic-alternative-action").textContent = "";
+      get("critic-teammate").textContent = "";
+      get("critic-proxy-note").textContent = "";
+      return;
+    }
+
+    const baseline = intervention.baseline && typeof intervention.baseline === "object"
+      ? intervention.baseline : {};
+    const actual = Array.isArray(step.actual_actions) ? step.actual_actions : [];
+    const recordedAction = Number.isInteger(actual[actor]) ? actual[actor] : baseline.action;
+    const teammateAction = Number.isInteger(actual[target]) ? actual[target] : null;
+    const alternatives = Array.isArray(intervention.alternatives)
+      ? intervention.alternatives.filter(item =>
+          item && Number.isInteger(item.action)
+            && item.action >= 0 && item.action < critic.action_names.length
+        ) : [];
+    if (!alternatives.length) {
+      get("critic-unavailable").hidden = false;
+      get("critic-intervention").hidden = true;
+      return;
+    }
+    const actionCodes = new Set(alternatives.map(item => item.action));
+    if (!criticActionPinned || criticAction === null || !actionCodes.has(criticAction)) {
+      criticAction = actionCodes.has(recordedAction) ? recordedAction : alternatives[0].action;
+    }
+    updateCriticActionOptions(recordedAction);
+    get("critic-actor").value = String(actor);
+    get("critic-action").value = String(criticAction);
+    const interventionPanel = get("critic-intervention");
+    interventionPanel.dataset.actor = String(actor);
+    interventionPanel.dataset.target = String(target);
+    interventionPanel.dataset.action = String(criticAction);
+    get("critic-teammate").textContent =
+      `${chefName(state, target)} stays fixed on the recorded outgoing action ${actionLabel(teammateAction)}. ` +
+      `The comparison changes only ${chefName(state, actor)}.`;
+    get("critic-baseline-action").textContent =
+      `Recorded outgoing action for ${chefName(state, actor)}: ${actionLabel(recordedAction)}. ` +
+      `This comparison uses ${chefName(state, target)}'s next-state value-head outputs.`;
+    const selected = alternatives.find(item => item.action === criticAction) || alternatives[0];
+    const noChange = selected.action === recordedAction;
+    get("critic-alternative-action").textContent = noChange
+      ? `No change selected: ${actionLabel(selected.action)} is the recorded action.`
+      : `${actionLabel(selected.action)} instead of recorded ${actionLabel(recordedAction)}.`;
+    get("critic-baseline").dataset.action = String(recordedAction);
+    get("critic-alternative").dataset.action = String(selected.action);
+    renderCriticMetrics(get("critic-baseline"), baseline, state, target);
+    renderCriticMetrics(get("critic-alternative"), selected, state, target);
+    let valueDelta = selected.value_delta;
+    if (!finite(valueDelta)) {
+      valueDelta = finite(selected.next_value) && finite(baseline.next_value)
+        ? selected.next_value - baseline.next_value : NaN;
+    }
+    const deltas = get("critic-deltas");
+    deltas.replaceChildren();
+    deltas.dataset.valueDelta = String(valueDelta);
+    const deltaLabel = document.createElement("span");
+    deltaLabel.className = "critic-delta-label";
+    deltaLabel.textContent = "Signed value_delta (alternative − baseline):";
+    deltas.append(deltaLabel);
+    addDelta(deltas, "Δ next-state value", valueDelta, 6, true);
+    get("critic-proxy-note").textContent =
+      `Only ${chefName(state, actor)}'s outgoing action changes; ${chefName(state, target)}'s recorded action is fixed, and the same memory after the current observation is used for both branches. ` +
+      `Next values are ${chefName(state, target)}'s value-head outputs from each branch's next observation. ` +
+      "Signed value_delta = alternative next_value − baseline next_value; it is not reward-adjusted. " +
+      "Raw reward and done are context only.";
+  }
 
   // Panels only consume recorded data; future panels can use additional payload fields.
   function paragraph(parent, text, muted = false) {
@@ -171,6 +479,7 @@
       countdown.style.width = `${100 / state.grid[0].length}%`;
       get("pot-labels").append(countdown);
     }
+    renderCritic(current);
   }
   function pause() {
     playing = false;
@@ -210,6 +519,7 @@
     : `Full kitchen shown for viewers. Chefs receive ${meta.agent_view_size === null ? "full-kitchen" : `local ${2 * meta.agent_view_size + 1} × ${2 * meta.agent_view_size + 1}`} observations.`;
   get("timeline").max = last;
   get("step-input").max = last;
+  if (criticActive) initCriticControls();
   get("play").addEventListener("click", toggle);
   get("previous").addEventListener("click", () => seek(current - 1));
   get("next").addEventListener("click", () => seek(current + 1));
@@ -217,6 +527,19 @@
   get("step-input").addEventListener("focus", () => { pause(); render(); });
   get("step-input").addEventListener("change", event => seek(event.target.value));
   get("speed").addEventListener("change", () => { if (playing) schedule(); });
+  get("critic-actor").addEventListener("change", event => {
+    const value = Number(event.target.value);
+    if (value === 0 || value === 1) criticActor = value;
+    renderCritic(current);
+  });
+  get("critic-action").addEventListener("change", event => {
+    const value = Number(event.target.value);
+    if (Number.isInteger(value)) {
+      criticAction = value;
+      criticActionPinned = true;
+    }
+    renderCritic(current);
+  });
   document.addEventListener("keydown", event => {
     if (event.target.closest("input, select, textarea") || event.target.isContentEditable) return;
     if (!["Space", "ArrowLeft", "ArrowRight"].includes(event.code)) return;
