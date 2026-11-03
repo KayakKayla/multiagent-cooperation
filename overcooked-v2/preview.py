@@ -118,14 +118,59 @@ def render_replay_frames(states, radius):
     return np.concatenate(batches)
 
 
-def save_preview(initial, trace, output: Path, config, mode, seed, policy_seeds=None):
+def draw_action_probability_panel(draw, *, x, y, title, probabilities, selected_action, font, small_font, color):
+    """Draw one chef's probabilities and highlight its selected action."""
+    draw.text((x, y), title, fill=color, font=font)
+    if probabilities is None:
+        draw.text(
+            (x, y + 32),
+            "No previous decision",
+            fill="#cbd5e1",
+            font=small_font,
+        )
+        return
+    action_names = [action.name for action in OvercookedActionsEnum]
+    bar_width = 130
+    for action_index, (name, probability) in enumerate(
+        zip(action_names, probabilities)
+    ):
+        row_y = y + 34 + action_index * 26
+        selected = action_index == selected_action
+        label = f"> {name}" if selected else f"  {name}"
+        row_color = color if selected else "#cbd5e1"
+        draw.text(
+            (x, row_y),
+            label,
+            fill=row_color,
+            font=small_font,
+        )
+        bar_x = x + 100
+        draw.rectangle(
+            (bar_x, row_y + 5, bar_x + bar_width, row_y + 17),
+            fill="#334155",
+        )
+        filled_width = int(round(bar_width * float(probability)))
+        if filled_width > 0:
+            draw.rectangle(
+                (bar_x, row_y + 5, bar_x + filled_width, row_y + 17),
+                fill=color if selected else "#94a3b8",
+            )
+        draw.text(
+            (x + 242, row_y),
+            f"{float(probability):.1%}",
+            fill=row_color,
+            font=small_font,
+        )
+
+
+def save_preview(initial, trace, output: Path, config, mode, seed, policy_seeds=None, action_probs=None):
     scripted = mode == "scripted"
     states, actions, rewards, correct, wrong, _ = trace
-    # HTML retains every step; only the legacy GIF samples every second step.
+    # HTML and GIF retain the initial state and every resulting state.
     states = jax.tree.map(
         lambda first, rest: np.concatenate(([first], rest)), initial, states
     )
-    indices = np.unique(np.append(np.arange(0, len(actions) + 1, 2), len(actions)))
+    indices = np.arange(len(actions) + 1)
     radius = config["ENV_KWARGS"]["agent_view_size"]
     all_frames = render_replay_frames(states, radius)
     save_replay(build_replay_data(states, actions, rewards, correct, wrong,
@@ -145,6 +190,29 @@ def save_preview(initial, trace, output: Path, config, mode, seed, policy_seeds=
     canvas_width = max(880, width + 390)
     canvas_height = max(690, height + 205)
     right = width + 45
+    probability_x = None
+    if action_probs is not None:
+        action_probs = np.asarray(action_probs)
+        expected_shape = (
+            len(actions),
+            len(initial.agents.inventory),
+            len(OvercookedActionsEnum),
+        )
+        if action_probs.shape != expected_shape:
+            raise ValueError(
+                f"Expected action probabilities shaped {expected_shape}, "
+                f"got {action_probs.shape}"
+            )
+        if (
+            not np.isfinite(action_probs).all()
+            or np.any(action_probs < 0)
+            or np.any(action_probs > 1)
+        ):
+            raise ValueError("Action probabilities must be finite and between 0 and 1.")
+        if not np.allclose(action_probs.sum(axis=-1), 1.0, atol=1e-5):
+            raise ValueError("Each agent's action probabilities must sum to 1.")
+        probability_x = canvas_width + 20
+        canvas_width += 350
     annotated = []
     for index, raw in zip(indices, frames):
         image = Image.new("RGB", (canvas_width, canvas_height), "#111827")
@@ -185,6 +253,24 @@ def save_preview(initial, trace, output: Path, config, mode, seed, policy_seeds=
                 OvercookedActionsEnum(int(actions[index - 1, agent])).name
             )
             text(right, y + 58, f"Action: {action}", "#cbd5e1")
+            if action_probs is not None:
+                if index == 0:
+                    probabilities = None
+                    selected_action = None
+                else:
+                    probabilities = action_probs[index - 1, agent]
+                    selected_action = int(actions[index - 1, agent])
+                draw_action_probability_panel(
+                    draw,
+                    x=probability_x,
+                    y=139 + agent * 240,
+                    title=f"Chef {number}: probabilities",
+                    probabilities=probabilities,
+                    selected_action=selected_action,
+                    font=font,
+                    small_font=small_font,
+                    color=color,
+                )
 
         for pot, (y, x) in enumerate(pot_positions, start=1):
             contents, timer = states.grid[index, y, x, 1:]
@@ -213,7 +299,7 @@ def save_preview(initial, trace, output: Path, config, mode, seed, policy_seeds=
         )
         text(
             20, canvas_height - 28,
-            "Score labels are display only. One frame per two steps; actions shown for the latest step.",
+            "One frame per step; actions and probabilities describe the decision that produced this state.",
             "#94a3b8", small_font,
         )
         annotated.append(image)
@@ -221,6 +307,9 @@ def save_preview(initial, trace, output: Path, config, mode, seed, policy_seeds=
     annotated[0].save(output / "initial.png")
     annotated[-1].save(output / "final.png")
     annotated[0].save(
-        output / "rollout.gif", save_all=True, append_images=annotated[1:],
-        duration=[200] * (len(annotated) - 1) + [1200], loop=0,
+        output / "rollout.gif", 
+        save_all=True, 
+        append_images=annotated[1:],
+        duration=[100] * (len(annotated) - 1) + [1200], 
+        loop=0,
     )

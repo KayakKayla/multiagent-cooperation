@@ -84,7 +84,7 @@ def delivery_counts(before, after, actions):
     return jnp.sum(delivered & correct_recipe), jnp.sum(delivered & ~correct_recipe)
 
 
-def make_episode(module, config, env, network):
+def make_episode(module, config, env, network, record_action_probs=False):
     """Compile playback only: sample actions, advance the kitchen, record events."""
     @jax.jit
     def play(params, seed, partner_params=None):
@@ -116,6 +116,7 @@ def make_episode(module, config, env, network):
                 hidden = jnp.concatenate(memories, axis=0)
                 policy = module.distrax.Categorical(logits=jnp.concatenate(logits, axis=1))
             # Sample both actions with the same random-number layout for every pairing.
+            action_probs = policy.probs[0]
             actions = policy.sample(seed=action_key)[0]
             action_dict = {agent: actions[i] for i, agent in enumerate(env.agents)}
             # step_env retains the final kitchen, whereas env.step auto-resets it.
@@ -130,12 +131,17 @@ def make_episode(module, config, env, network):
             reward = rewards[env.agents[0]]
             finite = jnp.all(jnp.isfinite(policy.probs))
             trace = (after, actions, reward, correct, wrong, finite)
-            return (observations, after, hidden, key), trace
+            recorded = (trace, action_probs) if record_action_probs else trace
+            return (observations, after, hidden, key), recorded
 
-        _, trace = jax.lax.scan(
+        _, recorded = jax.lax.scan(
             step, (observations, initial, hidden, key), None, env.max_steps
         )
-        return initial, trace
+
+        if record_action_probs:
+            trace, action_probs = recorded
+            return initial, trace, action_probs
+        return initial, recorded
 
     return play
 
@@ -218,6 +224,7 @@ def main():
     ]
     seeds = list(range(args.eval_seed, args.eval_seed + args.episodes))
     frame_ms = round(env.rules.step_seconds * 1000) if env.name == "oc2_sushi_1_3" else 100
+    gif_stride = 2 if env.name == "oc2_sushi_1_3" else 1
     protocol = {
         "policy": mode, "source_run": str(run) if run else None,
         "partner_run": str(partner_run) if partner_run else None, "policies": policies,
@@ -225,7 +232,7 @@ def main():
         "upstream_revision": revision, "backend": jax.default_backend(),
         "episode_seeds": seeds, "action_selection": "sample", "recorded_episode": 0,
         "reward": "shared raw environment reward counted once; no shaping",
-        "gif_stride": 2, "gif_frame_ms": 2 * frame_ms,
+        "gif_stride": gif_stride, "gif_frame_ms": gif_stride * frame_ms,
         "replay_file": "replay.html", "replay_schema_version": 1,
         "replay_stride": 1, "replay_frame_ms": frame_ms,
     }
@@ -235,12 +242,19 @@ def main():
         flush=True,
     )
     print(f"Chef 1 (red): seed {policy_seeds[0]}; chef 2 (blue): seed {policy_seeds[1]}", flush=True)
-    play = make_episode(module, config, env, network)
+    play = make_episode(module, config, env, network, True)
     rows = []
     recorded = None
     for episode, seed in enumerate(seeds):
-        initial, trace = jax.device_get(play(params, np.uint32(seed), partner_params))
+        initial, trace, action_probs = jax.device_get(play(params, np.uint32(seed), partner_params))
         states, actions, rewards, correct, wrong, finite = trace
+        np.savez_compressed(
+            output / f"decisions-{episode:03d}.npz",
+            action_probs=action_probs,
+            actions=actions,
+            agent_ids=np.asarray(env.agents),
+            evaluation_seed=np.uint32(seed),
+        )
         if not finite.all() or not np.isfinite(rewards).all() or not bool(states.done[-1]):
             raise ValueError("Invalid policy predictions, rewards, or unfinished episode.")
         row = {
@@ -252,6 +266,7 @@ def main():
         print(f"Episode {episode + 1}/{len(seeds)}: {row}", flush=True)
         if episode == 0:
             recorded = (initial, trace)
+            recorded_probs = action_probs
 
     with (output / "episodes.csv").open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=rows[0].keys())
@@ -263,7 +278,7 @@ def main():
         from scenarios.oc2_sushi_1_3.preview import save_policy_preview
         save_policy_preview(env, *recorded, output, mode, seeds[0])
     else:
-        save_preview(*recorded, output, config, mode, seeds[0], policy_seeds=policy_seeds)
+        save_preview(*recorded, output, config, mode, seeds[0], policy_seeds=policy_seeds, action_probs=recorded_probs)
     summary = {
         "status": "complete", "policy": mode, "episodes": len(rows),
         "mean_team_reward": float(np.mean([row["team_reward"] for row in rows])),
