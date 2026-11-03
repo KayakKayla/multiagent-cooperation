@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools==84.2.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "se390-evals-site"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi==0.162.0", "starlette==1.10.0", "uvicorn==0.54.0", "SQLAlchemy==2.1.6",
+  "alembic==1.20.1", "Authlib==1.9.2", "httpx==0.28.1", "Jinja2==3.1.6",
+  "itsdangerous==2.2.0",
+]
+[project.optional-dependencies]
+test = ["pytest==9.2.0"]
+[project.scripts]
+evals-site = "app.cli:main"
+[tool.setuptools]
+packages = ["app", "evals_shared"]
+package-dir = {evals_shared = "shared/evals_shared"}
+[tool.pytest.ini_options]
+pythonpath = [".", "shared"]
+testpaths = ["tests"]
