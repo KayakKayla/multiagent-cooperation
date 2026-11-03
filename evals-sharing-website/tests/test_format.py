@@ -83,6 +83,8 @@ class FormatTests(unittest.TestCase):
 
     def test_frozen_sushi_training_config_exports_without_losing_observation_mode(self):
         config_path = Path(__file__).resolve().parents[2] / "model/oc2_sushi_1_3/policy-spawn-v8/config.json"
+        if not config_path.is_file():
+            self.skipTest("Frozen model is outside the minimal website checkout")
         config = portable_metadata(json.loads(config_path.read_text(encoding="utf-8")))
         self.assertEqual(config["IMITATION"]["observations"], "full_map")
         document = fixture()
@@ -93,6 +95,9 @@ class FormatTests(unittest.TestCase):
             self.assertEqual(parse_document(path.read_bytes()), document)
 
     def test_observation_labels_do_not_allow_raw_observations_or_other_excluded_fields(self):
+        document = fixture()
+        document["training_runs"][0]["config"]["observations"] = "full_map"
+        validate_document(document)
         for value in ([], [[1, 2]], {"agent_0": [1, 2]}, 1, True, None):
             with self.subTest(value=value):
                 document = fixture()

@@ -1,16 +1,24 @@
 "use strict";
 document.addEventListener('DOMContentLoaded', () => {
   const host=document.getElementById('episode-player'); if(!host)return;
-  const root=document.getElementById('replay-root'),status=document.getElementById('episode-status'),metrics=document.getElementById('episode-metrics'),retry=document.getElementById('episode-retry');
+  const root=document.getElementById('replay-root'),status=document.getElementById('episode-status'),metrics=document.getElementById('episode-metrics'),diagnostics=document.getElementById('episode-diagnostics'),retry=document.getElementById('episode-retry');
   const episodes=JSON.parse(document.getElementById('episode-data').textContent),cards=Array.from(host.querySelectorAll('[data-episode-index]'));
   let viewer=null,serial=0,controller=null,fragment=null,current=null,currentStep=0;
   const nonnegative=value=>typeof value==='string'&&/^\d+$/.test(value)&&Number.isSafeInteger(Number(value))?Number(value):0;
   function updateURL(index,step){const url=new URL(location.href);url.searchParams.set('episode',index);url.searchParams.set('step',step);history.replaceState(null,'',url);}
   function showMetrics(episode){
-    metrics.replaceChildren();const values={...episode.metrics,steps:episode.steps};
+    metrics.replaceChildren();diagnostics.replaceChildren();const values={...episode.metrics,steps:episode.steps};
     for(const key of ['team_reward','correct_dishes','wrong_dishes'])if(values[key]===undefined)values[key]=null;
     const labels={team_reward:'Team reward',correct_dishes:'Correct deliveries',wrong_dishes:'Wrong deliveries',steps:'Steps'};
-    for(const [key,value]of Object.entries(values)){const wrap=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=labels[key]??key.replaceAll('_',' ');dd.textContent=value===null||value===undefined?'Unknown':typeof value==='number'?Site.formatNumber(value):typeof value==='boolean'?(value?'Yes':'No'):typeof value==='object'?JSON.stringify(value):String(value);dd.title=value==null?'Unknown':typeof value==='object'?JSON.stringify(value):String(value);wrap.append(dt,dd);metrics.append(wrap);}
+    for(const [key,value]of Object.entries(values)){
+      const label=labels[key]??key.replaceAll('_',' ');
+      if(value!==null&&typeof value==='object'){
+        const details=document.createElement('details'),summary=document.createElement('summary'),pre=document.createElement('pre');
+        summary.textContent=label[0].toUpperCase()+label.slice(1);pre.textContent=JSON.stringify(value,null,2);details.append(summary,pre);diagnostics.append(details);
+        continue;
+      }
+      const wrap=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=value===null||value===undefined?'Unknown':typeof value==='number'?Site.formatNumber(value):typeof value==='boolean'?(value?'Yes':'No'):String(value);dd.title=value==null?'Unknown':String(value);wrap.append(dt,dd);metrics.append(wrap);
+    }
   }
   async function load(episode,step=0){
     const index=episode.index,ticket=++serial;current=episode;currentStep=step;controller?.abort();controller=new AbortController();viewer?.destroy();viewer=null;root.replaceChildren();showMetrics(episode);retry.hidden=true;

@@ -8,9 +8,9 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
 function setup({base='',query='?episode=1&step=2',episodes,request}={}){
  episodes??=[{index:0,seed:1,steps:2,metrics:{correct_dishes:0},recording_available:true},{index:1,seed:2,steps:3,metrics:{},recording_available:true},{index:2,seed:3,steps:null,metrics:{},recording_available:false}];
  const host=new Element();host.dataset.evaluationId='e1';const cards=episodes.map(ep=>{const el=new Element();el.dataset.episodeIndex=String(ep.index);el.disabled=!ep.recording_available;return el;});host.querySelectorAll=()=>cards;
- const ids={'episode-player':host,'replay-root':new Element(),'episode-status':new Element(),'episode-metrics':new Element(),'episode-retry':new Element(),'episode-data':{textContent:JSON.stringify(episodes)}};
+ const ids={'episode-player':host,'replay-root':new Element(),'episode-status':new Element(),'episode-metrics':new Element(),'episode-diagnostics':new Element(),'episode-retry':new Element(),'episode-data':{textContent:JSON.stringify(episodes)}};
  const images=['kitchen-atlas.png','sushi-atlas.png'].map(name=>{const el=new Element();el.dataset.replayAsset=name;return el;});
- const doc={getElementById:id=>ids[id],addEventListener(_event,fn){this.ready=fn;},createElement(tag){const el=new Element();if(tag==='template')el.content={querySelectorAll:()=>images};return el;}};
+ const doc={getElementById:id=>ids[id],addEventListener(_event,fn){this.ready=fn;},createElement(tag){const el=new Element();el.tagName=tag;if(tag==='template')el.content={querySelectorAll:()=>images};return el;}};
  const requested=[],history=[],mounted=[],recording={steps:[{}]};
  const context={document:doc,URL,URLSearchParams,AbortController,location:{href:'https://example.test'+base+'/evaluations/e1'+query,search:query},history:{replaceState(_a,_b,url){history.push(String(url));}},Site:{path:p=>base+p,formatNumber:String,request:async(url,options)=>{requested.push(base+url);return request?request(url,options):{episode:episodes.find(ep=>url.endsWith('/'+ep.index)),recording};}},fetch:async url=>{requested.push(url);return{ok:true,text:async()=>'<div>Trusted controls</div>'};},mountReplay(root,data,options){mounted.push({data,options});options.onStep(options.step);return{destroy(){}};}};
  context.window=context;vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../static/episode.js'),'utf8'),context);doc.ready();return{ids,cards,requested,history,mounted,images};
@@ -33,5 +33,16 @@ test('selected metrics preserve booleans, text, structured evidence and precise 
  const raw={team_reward:1234.567891234,finite_predictions:true,failed:false,status:'complete',details:{sample:2}};
  const app=setup({episodes:[{index:0,seed:1000,steps:2,metrics:raw,recording_available:true}]});await flush();
  const values=Object.fromEntries(app.ids['episode-metrics'].children.map(el=>[el.children[0].textContent,el.children[1]]));
- assert.equal(values['finite predictions'].textContent,'Yes');assert.equal(values.failed.textContent,'No');assert.equal(values.status.textContent,'complete');assert.equal(values.details.textContent,'{"sample":2}');assert.equal(values['Team reward'].title,'1234.567891234');assert.equal(raw.team_reward,1234.567891234);
+ assert.equal(values['finite predictions'].textContent,'Yes');assert.equal(values.failed.textContent,'No');assert.equal(values.status.textContent,'complete');assert.equal(values.details,undefined);assert.equal(JSON.parse(app.ids['episode-diagnostics'].children[0].children[1].textContent).sample,2);assert.equal(values['Team reward'].title,'1234.567891234');assert.equal(raw.team_reward,1234.567891234);
+});
+
+test('per-step arrays are collapsed below the replay and cleared when selecting another episode',async()=>{
+ const trace={action_dropout_mask:[[false,false],[true,false]],executed_actions:[[1,2],[3,4]],proposed_actions:[[1,2],[5,4]],random_action_mask:[[false,false],[false,false]]};
+ const app=setup({query:'?episode=0',episodes:[{index:0,seed:1,steps:2,metrics:{team_reward:0,...trace},recording_available:true},{index:1,seed:2,steps:1,metrics:{team_reward:20},recording_available:true}]});await flush();
+ assert.ok(app.ids['episode-metrics'].children.every(el=>!Object.hasOwn(trace,el.children[0].textContent.replaceAll(' ','_'))));
+ const details=app.ids['episode-diagnostics'].children;assert.equal(details.length,4);
+ for(const [i,[key,value]]of Object.entries(trace).entries()){
+   assert.equal(details[i].tagName,'details');assert.ok(!details[i].open);assert.equal(details[i].children[0].tagName,'summary');assert.equal(details[i].children[0].textContent.toLowerCase(),key.replaceAll('_',' '));assert.equal(details[i].children[1].tagName,'pre');assert.deepEqual(JSON.parse(details[i].children[1].textContent),value);
+ }
+ app.cards[1].listeners.click();await flush();assert.equal(app.ids['episode-diagnostics'].children.length,0);
 });
