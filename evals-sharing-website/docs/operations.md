@@ -11,11 +11,23 @@ clone support and off-VPS restoration remain deployment acceptance checks.
 
 Use Python 3.12, a supported SQLite build, Git, systemd and Caddy on the target.
 Choose an install path readable by the unprivileged `evals-site` service account.
+Choose the deployment branch explicitly and obtain its reviewed full commit SHA
+before cloning. The current implementation branch is `rowan/evals-sharing-website`;
+the remote's default branch is not a substitute. Replace the repository URL and
+`<reviewed-full-commit-sha>` below with the intended deployment inputs.
 
 ```bash
+DEPLOY_BRANCH='rowan/evals-sharing-website'
+EXPECTED_COMMIT='<reviewed-full-commit-sha>'
 git clone --filter=blob:none --sparse --depth=1 \
-  --single-branch --no-tags --no-recurse-submodules <repo-url> results-site
+  --branch "$DEPLOY_BRANCH" --single-branch --no-tags --no-recurse-submodules \
+  <repo-url> results-site
 cd results-site
+git rev-parse HEAD
+if [ "$(git rev-parse HEAD)" != "$EXPECTED_COMMIT" ]; then
+  echo "Deployment stopped: checkout does not match the reviewed commit." >&2
+  exit 1
+fi
 git sparse-checkout set evals-sharing-website
 git config submodule.recurse false
 git config fetch.recurseSubmodules false
@@ -29,6 +41,10 @@ python3.12 -m venv .venv
 .venv/bin/python -m pip install --no-deps --no-build-isolation -e .
 .venv/bin/python -m pip check
 ```
+
+Stop before installation if the commit comparison fails. Resolve the branch/SHA
+difference and deploy only the reviewed revision; do not silently accept a newer
+branch tip. Record that full SHA with the deployment's smoke-check results.
 
 The remote must actually support partial clone: inspect clone output, the
 promisor/filter config, checkout contents and `.git/objects` size. Sparse checkout

@@ -5,6 +5,28 @@ GitHub teammates can review/import JSON, annotate evidence, and permanently dele
 records. The server never loads policy weights, JAX, or JaxMARL. Synthetic demo
 data is labelled as synthetic; it is not research evidence.
 
+## Launch an existing local setup
+
+From `evals-sharing-website/`, use the same data directory as during setup. No
+installation or migration is needed just to restart an unchanged local version.
+
+Windows PowerShell:
+
+```powershell
+$env:EVALS_DATA_DIR = "$PWD/.data"
+.venv/Scripts/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+```
+
+Linux/macOS:
+
+```bash
+export EVALS_DATA_DIR="$PWD/.data"
+.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+```
+
+Open [the local archive](http://127.0.0.1:8000). Stop it with Ctrl+C. If your setup
+uses a different data directory or OAuth configuration, retain those settings.
+
 ## Local setup
 
 Use Python 3.12. From this directory, on Linux/macOS:
@@ -15,7 +37,6 @@ python3.12 -m venv .venv
 .venv/bin/python -m pip install --no-deps --no-build-isolation -e .
 export EVALS_DATA_DIR="$PWD/.data"
 .venv/bin/python -m app.cli migrate
-.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
 ```
 
 On Windows PowerShell:
@@ -26,10 +47,9 @@ py -3.12 -m venv .venv
 .venv/Scripts/python -m pip install --no-deps --no-build-isolation -e .
 $env:EVALS_DATA_DIR = "$PWD/.data"
 .venv/Scripts/python -m app.cli migrate
-.venv/Scripts/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
 ```
 
-Open [the local archive](http://127.0.0.1:8000). Public reads work without OAuth
+Then use the launch commands above. Public reads work without OAuth
 credentials. The development directory `.data` is ignored; production state must
 live outside the checkout. Install editable from the source checkout so templates,
 static files, and migrations remain alongside `app/`; standalone wheel deployment
