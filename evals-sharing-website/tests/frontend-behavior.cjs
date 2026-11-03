@@ -16,17 +16,17 @@ function boot(basePath='') {
   deletion.dataset={deleteUrl:'/api/evaluations/e1',deleteName:'Example'};
   const title=new Control('title','Initial title'),notes=new Control('notes','Initial notes'),version=new Control('version','1');
   const fields=[title,notes,version]; fields.version=version;
-  const error=new Control(),heading=new Control(),noteText=new Control(),dialogTitle=new Control();
+  const error=new Control(),heading=new Control(),noteText=new Control(),dialogTitle=new Control(),checkpoint=new Control();checkpoint.dataset={progress:'9961472',progressUnit:'environment_steps'};
   const edit=new Control();edit.elements=fields;edit.dataset.editUrl='/api/evaluations/e1';
   edit.querySelector=selector=>({'[data-edit-cancel]':cancel,'[type=submit]':save,'.form-error':error,'input:not([type=hidden])':title}[selector]);
   edit.reset=()=>fields.forEach(field=>field.value=field.defaultValue);
   const dialog=new Control();dialog.querySelector=selector=>selector==='#delete-title'?dialogTitle:error;dialog.showModal=()=>{};
   const elements={'[data-edit-url]':edit,'[data-edit-toggle]':toggle,'[data-delete-url]':deletion,'[data-record-heading]':heading,'[data-record-notes]':noteText};
-  const doc={querySelector:selector=>selector==='meta[name="base-path"]'?{content:basePath}:elements[selector]??null,getElementById:id=>id==='delete-dialog'?dialog:id==='confirm-delete'?confirmation:null,addEventListener(type,callback){if(type==='DOMContentLoaded')this.ready=callback;}};
+  const doc={querySelectorAll:selector=>selector==='[data-checkpoint-label]'?[checkpoint]:[],querySelector:selector=>selector==='meta[name="base-path"]'?{content:basePath}:elements[selector]??null,getElementById:id=>id==='delete-dialog'?dialog:id==='confirm-delete'?confirmation:null,addEventListener(type,callback){if(type==='DOMContentLoaded')this.ready=callback;}};
   const fetched=[],navigation=[];const context={Headers,fetch:async(url,options)=>{fetched.push({url,options});return{ok:true,json:async()=>({ok:true})};},document:doc,sessionStorage:{getItem:()=>null,setItem(){}},location:{assign(value){navigation.push(value);}},FormData:class{constructor(form){this.form=form;}*[Symbol.iterator](){for(const field of this.form.elements)yield[field.name,field.value];}},setTimeout};context.window=context;
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../static/site.js'),'utf8'),context);
   context.Site.toast=()=>{};const failures=[];context.Site.showError=(_form,failure)=>failures.push(failure.message);doc.ready();
-  return{...context,save,cancel,toggle,confirmation,deletion,title,notes,version,edit,failures,fetched,navigation};
+  return{...context,save,cancel,toggle,confirmation,deletion,title,notes,version,edit,noteText,checkpoint,dialogTitle,failures,fetched,navigation};
 }
 
 test('failed permanent deletion releases the confirm button and can be retried',async()=>{
@@ -58,4 +58,30 @@ test('application URLs, requests, and redirects support root and prefix without 
     assert.deepEqual(ui.fetched.map(item=>item.url),[base+'/api/evaluations/e1',base+'/api/evaluations/e1']);
     ui.Site.navigate('/');assert.deepEqual(ui.navigation,[base+'/']);
   }
+});
+
+
+test('shared display formatting handles progress, local dates, invalid values and epoch zero',()=>{
+  const {Site}=boot();
+  for (const [value,unit,expected] of [[9961472,'environment_steps','9.96M steps'],[0,'optimizer_updates','0 updates'],[null,'steps','unknown progress'],[1500,null,'1.5K units'],[1000000000,'steps','1B steps']]) assert.equal(Site.formatProgress(value,unit),expected);
+  assert.equal(Site.formatDate(null),'Unknown');assert.equal(Site.formatDate('bad'),'Unknown');assert.equal(Site.formatDate('2026-02-30T12:00:00Z'),'Unknown');
+  assert.equal(Site.formatDate('2026-11-03T12:30:45.123Z'),Site.formatDate('2026-11-03T07:30:45.123-05:00'));
+  assert.equal(Site.formatDate(0),Site.formatDate('1970-01-01T00:00:00Z'));
+  assert.equal(Site.formatDate(1793709045),Site.formatDate('2026-11-03T12:30:45Z'));
+  assert.ok(!Site.formatDate('2026-11-03T12:30:45.123Z').includes('.123'));
+  assert.equal(Site.formatNumber(1.23456),'1.23');assert.equal(Site.formatNumber(true),'Yes');assert.equal(Site.formatNumber('failed'),'failed');
+});
+test('clearing notes hides the section and adding notes reveals it',async()=>{
+  const ui=boot();ui.Site.request=async()=>({version:2});
+  ui.notes.value='   ';await ui.edit.fire('submit');assert.equal(ui.noteText.hidden,true);
+  ui.notes.value='New note';await ui.edit.fire('submit');assert.equal(ui.noteText.hidden,false);assert.equal(ui.noteText.textContent,'New note');
+});
+
+
+test('renaming a run immediately updates automatic checkpoint labels and deletion confirmation',async()=>{
+  const ui=boot();ui.Site.request=async()=>({version:2});
+  ui.title.name='name';ui.title.value='Jeff';await ui.edit.fire('submit');
+  assert.equal(ui.checkpoint.textContent,'Jeff · 9.96M steps');assert.equal(ui.checkpoint.title,'Jeff · 9.96M steps');
+  assert.equal(ui.deletion.dataset.deleteName,'Jeff');await ui.deletion.fire('click');
+  assert.equal(ui.dialogTitle.textContent,'Permanently delete “Jeff”?');
 });

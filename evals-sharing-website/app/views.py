@@ -1,4 +1,5 @@
 from sqlalchemy import select, func, or_, exists
+from .presentation import format_progress
 from .models import Evaluation, TrainingRun, Policy, Participant, Episode
 
 
@@ -11,8 +12,8 @@ def evaluation_dict(evaluation):
 
 
 def checkpoint_dict(policy, run):
-    progress = "unknown progress" if policy.progress is None else f"{policy.progress:,} {run.progress_unit or 'units'}"
-    return {"id": policy.id, "checkpoint_id": policy.id, "source_checkpoint_id": policy.source_checkpoint_id, "run_id": run.id, "run_name": run.name, "progress": policy.progress, "progress_unit": run.progress_unit, "sha256": policy.sha256, "label": f"{run.name} · {progress}"}
+    progress = format_progress(policy.progress, run.progress_unit)
+    return {"id": policy.id, "checkpoint_id": policy.id, "source_checkpoint_id": policy.source_checkpoint_id, "run_id": run.id, "run_name": run.name, "training_run_name": run.name, "progress": policy.progress, "progress_unit": run.progress_unit, "sha256": policy.sha256, "label": f"{run.name} · {progress}"}
 
 
 def participants(db, evaluation_id):

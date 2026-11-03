@@ -1,9 +1,20 @@
 {% macro annotation(record, kind, user) %}
-<div class="detail-heading"><div><h1 data-record-heading>{{ record.title if kind == 'evaluations' else record.name }}</h1><p class="notes" data-record-notes>{{ record.notes or 'No notes.' }}</p></div>{% if user %}<div class="actions"><button type="button" data-edit-toggle>Edit annotations</button><button type="button" class="danger" data-delete-url="{{ root_path|default('') }}/api/{{ kind }}/{{ record.id }}" data-delete-name="{{ record.title if kind == 'evaluations' else record.name }}">Delete</button></div>{% endif %}</div>
+<div class="detail-heading"><div><h1 data-record-heading>{{ record.title if kind == 'evaluations' else record.name }}</h1><p class="notes" data-record-notes {% if not record.notes or not record.notes.strip() %}hidden{% endif %}>{{ record.notes or '' }}</p></div>{% if user %}<div class="actions"><button type="button" data-edit-toggle class="icon-button" aria-label="Edit annotations" title="Edit annotations">{{ action_icon("edit") }}</button><button type="button" class="danger icon-button" aria-label="Delete record" title="Delete record" data-delete-url="{{ root_path|default('') }}/api/{{ kind }}/{{ record.id }}" data-delete-name="{{ record.title if kind == 'evaluations' else record.name }}">{{ action_icon("delete") }}</button></div>{% endif %}</div>
 {% if user %}<form class="annotation-form card" data-edit-url="{{ root_path|default('') }}/api/{{ kind }}/{{ record.id }}" hidden><input type="hidden" name="version" value="{{ record.version }}"><label>{{ 'Title' if kind == 'evaluations' else 'Name' }}<input name="{{ 'title' if kind == 'evaluations' else 'name' }}" required maxlength="240" value="{{ record.title if kind == 'evaluations' else record.name }}"></label><label>Notes<textarea name="notes" rows="4" maxlength="20000">{{ record.notes }}</textarea></label><p class="form-error" role="alert"></p><div class="actions"><button type="submit">Save annotations</button><button type="button" data-edit-cancel>Cancel</button></div></form>{% endif %}
 {% endmacro %}
 {% macro evidence(label, value) %}<details class="card evidence"><summary>{{ label }}</summary><pre>{{ value|tojson(indent=2) }}</pre></details>{% endmacro %}
 
-{% macro attribution(record) %}
-<p class="muted">{% if record.uploader %}Uploaded by {{ record.uploader.display_name or record.uploader.login }}.{% endif %}{% if record.editor %} Last edited by {{ record.editor.display_name or record.editor.login }}{% if record.updated_at %} · {{ record.updated_at }}{% endif %}.{% endif %}</p>
-{% endmacro %}
+{% macro attribution(record) -%}
+Uploaded {{ local_datetime(record.uploaded_at if record.uploaded_at is defined and record.uploaded_at is not none else record.created_at) }}{% if record.uploader %} by {{ record.uploader.display_name or record.uploader.login }}{% endif %}.{% if record.editor %} Last edited by {{ record.editor.display_name or record.editor.login }}.{% endif %}
+{%- endmacro %}
+
+{% macro local_datetime(value) -%}{% if value is not none and value != '' and value is defined %}<time data-local-datetime="{{ value }}">Unknown</time>{% else %}Unknown{% endif %}{%- endmacro %}
+{% macro action_icon(kind) -%}<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">{% if kind == 'edit' %}<path d="m16 3 5 5-12 12-6 1 1-6Z"/><path d="m14 5 5 5"/>{% else %}<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>{% endif %}</svg>{%- endmacro %}
+
+{% macro readable_number(value) -%}
+{%- if value is undefined or value is none -%}Unknown
+{%- elif value is boolean -%}{{ 'Yes' if value else 'No' }}
+{%- elif value is number -%}<span data-format-number="{{ value }}" title="{{ value }}">{{ "{:,.2f}".format(value).rstrip('0').rstrip('.') }}</span>
+{%- elif value is mapping or (value is sequence and value is not string) -%}{{ value|tojson }}
+{%- else -%}{{ value }}{%- endif -%}
+{%- endmacro %}

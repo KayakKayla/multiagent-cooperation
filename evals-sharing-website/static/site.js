@@ -1,5 +1,38 @@
 "use strict";
 window.Site = {
+  formatNumber(value) {
+    if (value === null || value === undefined || value === '') return 'Unknown';
+    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+    if ((typeof value !== 'number' && typeof value !== 'string') || !Number.isFinite(Number(value))) return String(value);
+    return new Intl.NumberFormat(undefined, {maximumFractionDigits: 2}).format(Number(value));
+  },
+  formatProgress(progress, unit) {
+    if (progress === null || progress === undefined || progress === '' || !Number.isFinite(Number(progress))) return 'unknown progress';
+    let value = Number(progress), suffix = '';
+    for (const [threshold, symbol] of [[1e9,'B'],[1e6,'M'],[1e3,'K']]) {
+      if (Math.abs(value) >= threshold) { value /= threshold; suffix = symbol; break; }
+    }
+    const number = (Math.round((value + Number.EPSILON) * 100) / 100).toFixed(2).replace(/\.?0+$/, '');
+    return `${number}${suffix} ${{environment_steps:'steps',optimizer_updates:'updates'}[unit] || unit || 'units'}`;
+  },
+  formatDate(value) {
+    if (value === null || value === undefined || value === '') return 'Unknown';
+    let input = value;
+    if (typeof value === 'number' || (typeof value === 'string' && /^-?\d+(\.\d+)?$/.test(value.trim()))) input = Number(value) * 1000;
+    else if (typeof value === 'string' && !/(Z|[+-]\d{2}:?\d{2})$/i.test(value)) return 'Unknown';
+    if (typeof input === 'string') {
+      const parts = /^(\d{4})-(\d{2})-(\d{2})T/.exec(input);
+      if (parts) {
+        const [, year, month, day] = parts.map(Number);
+        const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+        if (month < 1 || month > 12 || day < 1 || day > days) return 'Unknown';
+      }
+    }
+    const date = new Date(input);
+    if (!Number.isFinite(date.getTime())) return 'Unknown';
+    return new Intl.DateTimeFormat(undefined, {year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(date);
+  },
+
   base: () => document.querySelector('meta[name="base-path"]')?.content ?? '',
   localPath(value) {
     if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || /[\\\u0000-\u0020]/.test(value)) throw new Error('Invalid application path.');
@@ -54,6 +87,14 @@ window.Site = {
   }
 };
 document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll?.('[data-local-datetime]').forEach(node => {
+    const value = node.dataset.localDatetime;
+    node.textContent = Site.formatDate(value);
+  });
+  document.querySelectorAll?.('[data-format-number]').forEach(node => {
+    node.title = node.dataset.formatNumber;
+    node.textContent = Site.formatNumber(node.dataset.formatNumber);
+  });
   const edit = document.querySelector('[data-edit-url]');
   document.querySelector('[data-edit-toggle]')?.addEventListener('click', () => { edit.hidden = !edit.hidden; if (!edit.hidden) edit.querySelector('input:not([type=hidden])').focus(); });
   edit?.querySelector('[data-edit-cancel]').addEventListener('click', () => { edit.reset(); edit.hidden = true; document.querySelector('[data-edit-toggle]').focus(); });
@@ -67,7 +108,14 @@ document.addEventListener('DOMContentLoaded', () => {
       // Cancellation returns to the latest successful save, including its version.
       for (const control of edit.elements) if ('defaultValue' in control) control.defaultValue = control.value;
       document.querySelector('[data-record-heading]').textContent = values.title ?? values.name;
-      document.querySelector('[data-record-notes]').textContent = values.notes || 'No notes.'; edit.querySelector('.form-error').textContent = ''; edit.hidden = true; Site.toast('Annotations saved.');
+      const name = values.title ?? values.name;
+      const deletion = document.querySelector('[data-delete-url]');
+      if (deletion) deletion.dataset.deleteName = name;
+      if (values.name !== undefined) document.querySelectorAll?.('[data-checkpoint-label]').forEach(node => {
+        const label = `${values.name} · ${Site.formatProgress(node.dataset.progress, node.dataset.progressUnit)}`;
+        node.textContent = label; node.title = label;
+      });
+      const notes = document.querySelector('[data-record-notes]'); notes.textContent = values.notes || ''; notes.hidden = !values.notes?.trim(); edit.querySelector('.form-error').textContent = ''; edit.hidden = true; Site.toast('Annotations saved.');
     } catch (error) { Site.showError(edit,error); } finally { button.disabled = false; }
   });
   const dialog = document.getElementById('delete-dialog'); let deletion;

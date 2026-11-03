@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import hashlib
 import time
 import httpx
 from authlib.integrations.starlette_client import OAuth
@@ -25,6 +26,20 @@ from .storage import unpack_recording
 from .views import lists, evaluation_dict, run_dict, participants, episode_dict, checkpoint_dict
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def static_asset_version(directory):
+    """Invalidate browser code/style caches when deployed asset content changes."""
+    digest = hashlib.sha256()
+    for path in sorted(directory.rglob("*")):
+        if path.is_file() and path.suffix in {".js", ".css"}:
+            name = path.relative_to(directory).as_posix().encode()
+            content = path.read_bytes()
+            digest.update(len(name).to_bytes(8, "big"))
+            digest.update(name)
+            digest.update(len(content).to_bytes(8, "big"))
+            digest.update(content)
+    return digest.hexdigest()[:16]
 
 
 async def bounded_body(request, limit):
@@ -55,6 +70,7 @@ def create_app(settings=None):
     app.state.throttle = Throttle()
     app.add_middleware(Sessions)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=[settings.host])
+    asset_version = static_asset_version(ROOT / "static")
     templates = Jinja2Templates(directory=str(ROOT / "templates"))
     app.mount("/static", StaticFiles(directory=ROOT / "static", check_dir=False), name="static")
     oauth = OAuth()
@@ -63,7 +79,7 @@ def create_app(settings=None):
 
     def render(request, filename, context=None, status_code=200):
         session = request.state.session
-        return templates.TemplateResponse(request=request, name=filename, context={"user": request.state.user, "csrf_token": session.csrf_token if session else "", "base_path": settings.root_path, "root_path": settings.root_path, **(context or {})}, status_code=status_code)
+        return templates.TemplateResponse(request=request, name=filename, context={"asset_version": asset_version, "user": request.state.user, "csrf_token": session.csrf_token if session else "", "base_path": settings.root_path, "root_path": settings.root_path, **(context or {})}, status_code=status_code)
 
     @app.exception_handler(HTTPException)
     async def http_error(request, error):
@@ -228,7 +244,7 @@ def create_app(settings=None):
             row = get_row(db, model, id)
             if model == TrainingRun and db.scalar(select(Policy.id).where(Policy.run_id == id).limit(1)):
                 policies = db.scalars(select(Policy).where(Policy.run_id == id)).all()
-                raise HTTPException(409, {"message": "This training run still has checkpoints; remove unreferenced checkpoints first", "references": [{"id": p.id, "url": settings.app_path(f"/training-runs/{id}#checkpoints"), "name": f"Checkpoint {p.sha256[:12]} · {p.progress if p.progress is not None else 'unknown'} {row.progress_unit or 'units'}"} for p in policies]})
+                raise HTTPException(409, {"message": "This training run still has checkpoints; remove unreferenced checkpoints first", "references": [{"id": p.id, "url": settings.app_path(f"/training-runs/{id}#checkpoints"), "name": checkpoint_dict(p, row)["label"]} for p in policies]})
             if model == Policy and db.scalar(select(Participant.id).where(Participant.policy_id == id).limit(1)):
                 refs = db.scalars(select(Participant.evaluation_id).where(Participant.policy_id == id).distinct()).all()
                 raise HTTPException(409, {"message": "This checkpoint is referenced by evaluations", "references": [{"id": ref, "url": settings.app_path(f"/evaluations/{ref}")} for ref in refs]})

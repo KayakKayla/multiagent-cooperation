@@ -80,10 +80,31 @@ class FrontendTests(unittest.TestCase):
         self.assertNotIn(evil,html)
         self.assertIn('&lt;img',html)
         self.assertIn('Baseline · 500 steps',html)
-        self.assertIn('Recording unavailable',html)
-        self.assertIn('Evaluation-wide statistics',html)
+        self.assertIn('disabled',html)
+        self.assertIn('Statistics across all 2 episodes',html)
         self.assertIn('Selected episode',html)
-        self.assertIn('value="1"',html)
+        self.assertNotIn('Exact checkpoint assignments',html)
+        self.assertNotIn('← Evaluations',html)
+        self.assertIn('class="muted record-metadata">Evaluated ',html)
+        self.assertNotIn('a'*64,html)
+        self.assertNotIn('episode-select',html)
+        self.assertIn('>0</span> steps',html)
+        self.assertIn('>10</span> steps',html)
+        self.assertIn('Unknown correct deliveries',html)
+        evaluation['episodes'][0]['metrics']['correct_dishes']=0
+        evaluation['episodes'][1]['steps']=0
+        same_lengths=self.env.get_template('evaluation.html').render(evaluation=evaluation,user=None,csrf_token='')
+        self.assertIn('>0</span> correct deliveries',same_lengths)
+        self.assertNotIn('<span>0 steps</span>',same_lengths)
+        self.assertIn('data-episode-index="1"',html)
+        evaluation['summary']={'mean_team_reward':1234.567891234,'status':'complete','finite_predictions':True,'details':{'sample':2}}
+        typed=self.env.get_template('evaluation.html').render(evaluation=evaluation,user=None,csrf_token='')
+        self.assertIn('>1,234.57</span>',typed)
+        self.assertIn('data-format-number="1234.567891234"',typed)
+        self.assertIn('<dd>complete</dd>',typed)
+        self.assertIn('<dd>Yes</dd>',typed)
+        self.assertIn('sample',typed)
+        self.assertEqual(evaluation['summary']['mean_team_reward'],1234.567891234)
         anonymous=self.env.get_template('evaluation.html').render(evaluation=evaluation,user=None,csrf_token='')
         self.assertNotIn('data-delete-url=',anonymous)
         self.assertNotIn('data-edit-url=',anonymous)
@@ -102,7 +123,7 @@ class FrontendTests(unittest.TestCase):
               "created_at":"2026-11-01T00:00:00Z"}
         html=self.env.get_template('home.html').render(user=None,csrf_token='',tab='evaluations',page=1,pages=1,
             filters={'q':'','layout':'','algorithm':''},evaluations=[item],training_runs=[])
-        self.assertIn('<td>140</td>',html)
+        self.assertIn('<span data-format-number="140" title="140">140</span>',html)
         self.assertIn('2026-09-01T00:00:00Z',html)
         self.assertNotIn('2026-11-01T00:00:00Z',html)
 
