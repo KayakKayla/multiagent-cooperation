@@ -148,6 +148,22 @@ def file_contains(path, token, chunk_size=64 * 1024):
     return False
 
 
+def check_callback_routes(token):
+    """Use six fresh HTTPS connections to expose mixed Apache worker routing."""
+    queries = [f"code={token}&state={token}",
+               f"code={token}&iss=https%3A%2F%2Fgithub.com%2Flogin%2Foauth&state={token}"]
+    for _ in range(3):
+        for query in queries:
+            headers, body = request("/sims/auth/callback?" + query)
+            if (" 400 " not in headers.splitlines()[0]
+                or "x-content-type-options: nosniff" not in headers.lower()
+                or b"Login session expired or missing; sign in again" not in body):
+                raise RuntimeError("callback routing check failed; inspect Apache worker generations")
+    # HTTP must also avoid logging callback queries before its HTTPS redirect.
+    for query in queries:
+        request("/sims/auth/callback?" + query, tls=False)
+
+
 def smoke(root_before):
     headers, body = request("/")
     if " 200 " not in headers.splitlines()[0] or body != root_before:
@@ -170,8 +186,7 @@ def smoke(root_before):
     if " 301 " not in headers.splitlines()[0] or "location: https://rowan.gaertner.ca/sims/" not in headers.lower():
         raise RuntimeError("public slash redirect check failed")
     token = "evals_privacy_probe_" + uuid.uuid4().hex
-    for tls in (False, True):
-        request(f"/sims/auth/callback?code={token}&state={token}", tls=tls)
+    check_callback_routes(token)
     time.sleep(1)
     logs = list(Path("/var/log/apache2").glob("*.log"))
     if not logs:
@@ -179,7 +194,7 @@ def smoke(root_before):
     for log in logs:
         if file_contains(log, token.encode()):
             raise RuntimeError(f"dummy callback credential leaked to {log}")
-    print("PASS HTTPS root unchanged; /sims home, CSS, API, redirect; dummy query absent from Apache logs")
+    print("PASS HTTPS root unchanged; /sims home, CSS, API, redirect; six callback routes; dummy query absent from Apache logs")
 
 
 def apply_changes(changes, originals, root_body, inventory):

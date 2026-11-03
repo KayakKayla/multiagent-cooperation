@@ -163,6 +163,19 @@ scope, upload limits and logging. These remain target-side acceptance checks unt
 actually performed. The optional Caddy example is only for a separate new host;
 do not start it alongside this VPS's Apache ports.
 
+If identical fresh connections alternate between the application and Apache's
+default 404, inspect `ps -C apache2 -o pid,ppid,lstart,args`, the unit's MainPID,
+and listeners before changing URL encoding or proxy rules. On this VPS, old
+workers from October continued holding the public listeners after a graceful
+reload on November 3; a clean Apache restart removed them. A restart briefly
+interrupts the existing site: first run `apache2ctl configtest` and inspect
+`systemctl show apache2 -p KillMode -p SendSIGKILL -p TimeoutStopUSec`. Require
+`KillMode=control-group` or `mixed` and `SendSIGKILL=yes`, then use
+`systemctl restart apache2` and confirm fresh workers and consistent responses.
+The deployment helper checks six fresh HTTPS callback connections with dummy
+values, including an encoded issuer URL. These must consistently return the
+application's missing-session 400; they do not establish real GitHub sign-in.
+
 ## Loopback nginx body-limit proxy
 
 Install `deploy/nginx-evals-site.conf` as the root-owned

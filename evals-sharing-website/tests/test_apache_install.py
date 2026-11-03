@@ -85,6 +85,36 @@ def test_log_scan_detects_token_across_chunk_boundary(tmp_path):
     assert apache.file_contains(log, b"1", chunk_size=8)
 
 
+def test_callback_checks_repeat_encoded_issuer_and_plain_query(monkeypatch):
+    calls = []
+
+    def request(path, *, tls=True):
+        calls.append((path, tls))
+        return ("HTTP/1.1 400 Bad Request\r\nx-content-type-options: nosniff",
+                b"Login session expired or missing; sign in again")
+
+    monkeypatch.setattr(apache, "request", request)
+    apache.check_callback_routes("dummy")
+    https = [path for path, tls in calls if tls]
+    http = [path for path, tls in calls if not tls]
+    assert len(https) == 6 and len(http) == 2
+    assert https.count("/sims/auth/callback?code=dummy&state=dummy") == 3
+    encoded = "/sims/auth/callback?code=dummy&iss=https%3A%2F%2Fgithub.com%2Flogin%2Foauth&state=dummy"
+    assert https.count(encoded) == 3
+    assert encoded in http
+
+
+def test_callback_checks_reject_lucky_success_followed_by_stale_worker(monkeypatch):
+    replies = iter([
+        ("HTTP/1.1 400 Bad Request\r\nx-content-type-options: nosniff",
+         b"Login session expired or missing; sign in again"),
+        ("HTTP/1.1 404 Not Found\r\nServer: Apache", b"Not Found"),
+    ])
+    monkeypatch.setattr(apache, "request", lambda *args, **kwargs: next(replies))
+    with pytest.raises(RuntimeError, match="worker generations"):
+        apache.check_callback_routes("dummy")
+
+
 @pytest.mark.parametrize("failure", ["configtest", "reload", "smoke"])
 def test_failure_restores_files_and_validates_before_reloading(tmp_path, monkeypatch, failure):
     (tmp_path / "mods-enabled").mkdir()
