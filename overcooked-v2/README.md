@@ -220,6 +220,12 @@ and resulting trajectories will differ after learning.
 Each evaluation creates a new folder under `outputs/evaluate/` containing:
 
 - `episodes.csv`: raw team reward, correct/wrong deliveries, steps, and seed per episode.
+- `evaluation.json`: portable, uploadable evidence with every episode's recorded
+  states, exact checkpoint assignments and provenance; no weights or PNG frames.
+  Export size is printed; the sharing website accepts at most 20 MiB. See the
+  [format/export guide](../evals-sharing-website/docs/format-and-export.md), including
+  conversion of existing outputs without rerunning evaluation. Local previews
+  continue to show the first episode.
 - `summary.json`: averages and total deliveries across the episodes.
 - `config.json` and `protocol.json`: environment/model settings, test seeds, policy hash,
   source revision, and the recorded episode selection. An untrained evaluation also

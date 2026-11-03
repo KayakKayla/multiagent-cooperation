@@ -111,6 +111,7 @@ def replay_data(script):
             agents.append(dict(index=agent, id=env.agents[agent], color=("red", "blue")[agent],
                                position=s.positions[agent].tolist(), facing=("right", "down", "left", "up")[int(s.directions[agent])],
                                holding=describe(s, int(held[0]), env) if len(held) else "empty hands",
+                               action_code=int(action) if action is not None else None,
                                action=Action(action).name.lower().replace("_", " ") if action is not None else None))
         pots, items = [], []
         for slot, kind in enumerate(s.kind):
@@ -138,16 +139,24 @@ def replay_data(script):
                               chop_ticks=env.chop_ticks, wash_ticks=env.wash_ticks)), steps=steps)
 
 
-def save_policy_preview(env, initial, trace, output, mode, seed):
+def build_policy_replay_data(env, initial, trace, mode, seed, episode_index=0):
     """Reuse the scripted state descriptions and renderer for a frozen policy."""
-    from replay import save_replay
     states, actions, *_ = jax.device_get(trace)
     states = [initial] + [jax.tree.map(lambda value: value[t], states) for t in range(len(actions))]
     episode = SimpleNamespace(env=env, states=states, actions=[[None, None]] + actions.tolist(),
                               labels=[""] * len(states))
     data = replay_data(episode)
-    data["metadata"].update(mode=mode, seed=int(seed),
+    data["metadata"].update(mode=mode, seed=int(seed), episode=int(episode_index), steps=len(actions),
         perspective="Frozen policy; no learning during evaluation. Prototype geometry, timing and fixed delivery reward.")
+    return data
+
+
+def save_policy_preview(env, initial, trace, output, mode, seed):
+    """Render the same first-episode data used by portable export."""
+    from replay import save_replay
+    data = build_policy_replay_data(env, initial, trace, mode, seed)
+    states, actions, *_ = jax.device_get(trace)
+    states = [initial] + [jax.tree.map(lambda value: value[t], states) for t in range(len(actions))]
     frames = [render(env, state) for state in states]
     save_replay(data, frames, output)
     Image.fromarray(frames[0]).save(output / "initial.png")

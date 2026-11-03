@@ -1,0 +1,33 @@
+
+<div class="heading"><div><p id="eyebrow" class="eyebrow">Replay collection</p><h1 id="title">Kitchen replay</h1><p id="subtitle" class="subtitle">Every move, recorded.</p></div><div id="reference" class="reference">Recorded episode</div></div>
+<section class="stats" aria-label="Episode totals at current step">
+ <div class="stat"><div class="stat-icon" aria-hidden="true">✧</div><div><p class="stat-name">Team reward</p><p class="stat-value" id="score">0<small>points</small></p></div><span class="stat-note">Shared, counted once</span></div>
+ <div class="stat"><div class="stat-icon" aria-hidden="true">♨</div><div><p class="stat-name">Correct deliveries</p><p class="stat-value" id="correct">0<small>in this episode</small></p></div></div>
+ <div class="stat"><div class="stat-icon" aria-hidden="true">✓</div><div><p class="stat-name">Wrong deliveries</p><p class="stat-value" id="wrong">0</p></div><span class="stat-note">Recorded events</span></div>
+</section>
+<div class="workspace">
+ <section class="stage" aria-label="Kitchen replay">
+  <div class="stage-head"><div><p class="eyebrow">Full kitchen view</p><h2>The kitchen</h2></div><div class="segmented" role="group" aria-label="Visual style"><button id="illustrated" aria-pressed="true">Illustrated</button><button id="original" aria-pressed="false">Original</button></div></div>
+  <div class="game-area">
+   <div class="recipe"><span class="recipe-icon" aria-hidden="true"></span><span>ON THE MENU<br><b id="recipe-name">Recorded recipe</b></span></div>
+   <label class="view-options"><input type="checkbox" id="grid-toggle"> Show grid</label>
+   <div id="board-wrap" class="board-wrap"><canvas id="kitchen" width="760" height="760" role="img" aria-label="Recorded kitchen state"></canvas><img id="original-frame" alt="Original recorded kitchen state" hidden><div id="toast" class="event-toast" role="status" hidden></div></div>
+   <div class="game-caption"><span><span class="live-dot"></span><span id="layout-caption">Recorded layout</span></span><span id="state-label">Initial kitchen</span></div>
+  <p id="milestone" class="milestone" hidden></p><p id="ingredient-note" class="milestone" hidden>Numbered pouches show simulator ingredient IDs; #0 is onion. The recipe lists the required counts.</p><p id="fallback" class="fallback" hidden></p></div>
+  <section class="transport" aria-label="Replay controls">
+   <div class="timeline-labels"><span class="step-number" id="step-label">Step 0 <span>/ 0</span></span><span id="playback-status" class="playback-status" role="status">Paused</span></div>
+   <div class="timeline-wrap"><input id="timeline" type="range" min="0" max="0" value="0" step="1" aria-label="Replay timeline"><div id="delivery-ticks" class="delivery-ticks" aria-hidden="true"></div></div>
+   <div class="transport-row"><div class="buttons"><button id="previous" aria-label="Previous step">←</button><button id="play" aria-pressed="false">▶ Play</button><button id="next" aria-label="Next step">→</button></div><label class="jump">Step <input id="step-input" type="number" min="0" max="0" value="0" aria-label="Go to step"></label><label class="speed-control">Speed <select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label></div>
+   <p class="transport-hint">SPACE play / pause &nbsp; · &nbsp; ← → step &nbsp; · &nbsp; Gold marks = deliveries</p>
+  </section>
+ </section>
+ <aside aria-label="Recorded chef and kitchen state">
+  <section class="panel"><div class="panel-title"><h2>Your kitchen team</h2><span id="chef-count" class="micro"></span></div><div id="chefs"></div></section>
+  <section class="panel"><div class="panel-title"><h2>Pots &amp; cooking</h2><span id="pot-count" class="micro"></span></div><div id="pots"></div></section>
+  <section class="panel"><div class="panel-title"><h2>Delivery moments</h2><span class="micro" id="delivery-count"></span></div><div id="deliveries" class="delivery-list"></div><p id="delivery-help" class="delivery-help">Jump to a delivery to inspect the actions and the next round of prep.</p></section>
+  <p class="provenance"><strong id="provenance-title"></strong><br><span id="perspective"></span></p>
+ </aside>
+</div>
+<details class="inspect"><summary>Inspect exact recorded state</summary><pre id="exact-state"></pre></details>
+<footer class="footer"><span>Actions describe the transition into this state. Coordinates start at (0, 0).</span><span>SIMS · SE 390 · Recorded episode</span></footer>
+<img id="sprite-atlas" src="/static/replay/kitchen-atlas.png" alt="" hidden><img id="sushi-atlas" src="/static/replay/sushi-atlas.png" alt="" hidden>

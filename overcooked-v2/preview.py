@@ -40,7 +40,7 @@ def inventory_name(value):
     return "onion" if value == DynamicObject.ingredient(0) else "ingredient"
 
 
-def build_replay_data(states, actions, rewards, correct, wrong, config, mode, seed):
+def build_replay_data(states, actions, rewards, correct, wrong, config, mode, seed, episode=0):
     """Describe each post-action state, including the action-free initial state."""
     count = len(actions)
     if any(len(values) != count for values in (rewards, correct, wrong)):
@@ -95,7 +95,7 @@ def build_replay_data(states, actions, rewards, correct, wrong, config, mode, se
         "schema_version": 1,
         "metadata": {
             "layout": config["ENV_KWARGS"]["layout"], "mode": mode,
-            "episode": 0, "seed": int(seed), "steps": count,
+            "episode": int(episode), "seed": int(seed), "steps": count,
             "starts": "original fixed starts" if mode == "scripted" else "randomized starts",
             "agent_view_size": config["ENV_KWARGS"]["agent_view_size"],
             "upstream_revision": (Path(__file__).parent / "UPSTREAM_REVISION").read_text().strip(),
