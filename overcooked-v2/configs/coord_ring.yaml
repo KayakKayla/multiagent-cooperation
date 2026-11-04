@@ -51,3 +51,7 @@ WANDB_MODE: disabled
 ALGORITHM: "ippo_rnn"
 CHECKPOINT_INTERVAL_UPDATES: 10
 CHECKPOINT_KEEP_LAST: 3
+
+RUNTIME:
+  XLA_FLAGS:
+    - --xla_gpu_deterministic_ops=true

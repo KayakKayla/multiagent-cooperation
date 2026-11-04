@@ -17,7 +17,13 @@ from scenarios import make_env
 
 
 from evaluation_core import (initialize_policy, check_run_revision, check_partner_config,
-                             load_checkpoint, make_episode, iterate_episodes, EvaluationExport, policy_config_path)
+                             load_checkpoint, make_episode as _make_episode,
+                             iterate_episodes, EvaluationExport, policy_config_path)
+
+
+def make_episode(module, config, env, network, record_action_probs=False):
+    return _make_episode(module, config, env, network,
+                         record_action_probs=record_action_probs)
 
 
 def main():
@@ -98,6 +104,7 @@ def main():
     ]
     seeds = list(range(args.eval_seed, args.eval_seed + args.episodes))
     frame_ms = round(env.rules.step_seconds * 1000) if env.name == "oc2_sushi_1_3" else 100
+    gif_stride = 2 if env.name == "oc2_sushi_1_3" else 1
     protocol = {
         "policy": mode, "source_run": str(run) if run else None,
         "partner_run": str(partner_run) if partner_run else None, "policies": policies,
@@ -105,7 +112,7 @@ def main():
         "upstream_revision": revision, "backend": jax.default_backend(),
         "episode_seeds": seeds, "action_selection": "sample", "recorded_episode": 0,
         "reward": "shared raw environment reward counted once; no shaping",
-        "gif_stride": 2, "gif_frame_ms": 2 * frame_ms,
+        "gif_stride": gif_stride, "gif_frame_ms": gif_stride * frame_ms,
         "replay_file": "replay.html", "replay_schema_version": 1,
         "replay_stride": 1, "replay_frame_ms": frame_ms,
     }
@@ -115,15 +122,22 @@ def main():
         flush=True,
     )
     print(f"Chef 1 (red): seed {policy_seeds[0]}; chef 2 (blue): seed {policy_seeds[1]}", flush=True)
-    play = make_episode(module, config, env, network)
+    play = make_episode(module, config, env, network, record_action_probs=True)
     export = EvaluationExport(output, env, config, mode, protocol, [
         {"run": run, "config": config, "weights": checkpoint_bytes, "initialization": not run},
         {"run": partner_run or run, "config": partner_config, "weights": partner_bytes, "initialization": not run},
     ])
     rows = []
     recorded = None
-    for episode, seed, (initial, trace) in iterate_episodes(play, params, seeds, partner_params):
+    for episode, seed, (initial, trace, action_probs) in iterate_episodes(play, params, seeds, partner_params):
         states, actions, rewards, correct, wrong, finite = trace
+        np.savez_compressed(
+            output / f"decisions-{episode:03d}.npz",
+            action_probs=action_probs,
+            actions=actions,
+            agent_ids=np.asarray(env.agents),
+            evaluation_seed=np.uint32(seed),
+        )
         if not finite.all() or not np.isfinite(rewards).all() or not bool(states.done[-1]):
             raise ValueError("Invalid policy predictions, rewards, or unfinished episode.")
         row = {
@@ -136,6 +150,7 @@ def main():
         print(f"Episode {episode + 1}/{len(seeds)}: {row}", flush=True)
         if episode == 0:
             recorded = (initial, trace)
+            recorded_probs = action_probs
 
     with (output / "episodes.csv").open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=rows[0].keys())
@@ -147,7 +162,7 @@ def main():
         from scenarios.oc2_sushi_1_3.preview import save_policy_preview
         save_policy_preview(env, *recorded, output, mode, seeds[0])
     else:
-        save_preview(*recorded, output, config, mode, seeds[0], policy_seeds=policy_seeds)
+        save_preview(*recorded, output, config, mode, seeds[0], policy_seeds=policy_seeds, action_probs=recorded_probs)
     summary = {
         "status": "complete", "policy": mode, "episodes": len(rows),
         "mean_team_reward": float(np.mean([row["team_reward"] for row in rows])),

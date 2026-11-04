@@ -131,8 +131,12 @@ def perturb_initial_state(env, initial, seed, spawn_jitter=0, random_facing=Fals
 
 def make_episode(module, config, env, network, action_selection="sampled", *,
                  action_dropout=0., random_action_prob=0., spawn_jitter=0,
-                 random_facing=False, diagnostics=False):
-    """One rollout implementation; default key splitting matches both old tools."""
+                 random_facing=False, diagnostics=False, record_action_probs=False):
+    """Return initial state and trace, then optional diagnostics and probabilities.
+
+    Recording pre-action probabilities does not consume random keys or alter play.
+    Default key splitting matches both original evaluation tools.
+    """
     if action_selection not in ("sampled", "greedy"):
         raise ValueError("action_selection must be sampled or greedy")
     validate_perturbations(action_dropout, random_action_prob, spawn_jitter)
@@ -196,10 +200,12 @@ def make_episode(module, config, env, network, action_selection="sampled", *,
                 result = (trace, (delivered, washed, info["invalid_action"], info["blocked"], proposed, drop_mask, random_mask))
             else:
                 result = trace
+            if record_action_probs:
+                result = (*result, policy.probs[0]) if diagnostics else (result, policy.probs[0])
             return (observations, after, hidden, key), result
 
         _, result = jax.lax.scan(step, (observations, initial, hidden, key), None, env.max_steps)
-        return (initial, *result) if diagnostics else (initial, result)
+        return (initial, *result) if diagnostics or record_action_probs else (initial, result)
     return play
 
 
