@@ -1,6 +1,7 @@
 """Probability recording checks with three-step toy policies, never training."""
 
 import copy
+import json
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -18,6 +19,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import evaluate
+from evals_shared.format import parse_document
 from preview import draw_action_probability_panel
 
 
@@ -35,6 +37,7 @@ class ActionProbabilityTests(unittest.TestCase):
     def setUpClass(cls):
         cls.config = {
             "ENV_NAME": "overcooked_v2", "SEED": 10, "GRU_HIDDEN_DIM": 2,
+            "ALGORITHM": "ippo_rnn",
             "ENV_KWARGS": {"layout": "coord_ring", "max_steps": 3,
                            "agent_view_size": 2, "random_agent_positions": True},
         }
@@ -106,6 +109,13 @@ class ActionProbabilityTests(unittest.TestCase):
 
             output, = (root / "outputs/evaluate").iterdir()
             self.assertEqual(len(list(output.glob("decisions-*.npz"))), 2)
+            exported = parse_document((output / "evaluation.json").read_bytes())
+            self.assertEqual(len(exported["episodes"]), 2)
+            self.assertEqual(len(exported["checkpoints"]), 1)
+            self.assertEqual(exported["checkpoints"][0]["progress"], 0)
+            protocol = json.loads((output / "protocol.json").read_text())
+            self.assertEqual(protocol["gif_stride"], 1)
+            self.assertEqual(protocol["gif_frame_ms"], 100)
             first_probabilities = None
             first_actions = None
             for episode, seed in enumerate((1000, 1001)):
@@ -118,6 +128,19 @@ class ActionProbabilityTests(unittest.TestCase):
                     np.testing.assert_array_equal(saved["actions"], expected_trace[1])
                     np.testing.assert_array_equal(saved["agent_ids"], self.env.agents)
                     self.assertEqual(int(saved["evaluation_seed"]), seed)
+                    evidence = exported["episodes"][episode]
+                    self.assertEqual(evidence["seed"], seed)
+                    steps = evidence["recording"]["steps"]
+                    self.assertEqual(len(steps), 4)
+                    self.assertTrue(all(agent["action_code"] is None for agent in steps[0]["agents"]))
+                    np.testing.assert_array_equal(
+                        [[agent["action_code"] for agent in step["agents"]]
+                         for step in steps[1:]], saved["actions"])
+                    np.testing.assert_array_equal(
+                        [[agent["position"] for agent in step["agents"]]
+                         for step in steps[1:]],
+                        np.stack((expected_trace[0].agents.pos.x,
+                                  expected_trace[0].agents.pos.y), axis=-1))
                     if episode == 0:
                         first_probabilities = saved["action_probs"].copy()
                         first_actions = saved["actions"].copy()

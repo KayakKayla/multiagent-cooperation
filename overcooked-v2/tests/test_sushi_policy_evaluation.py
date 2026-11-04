@@ -74,6 +74,27 @@ class SushiPolicyEvaluationTests(unittest.TestCase):
             self.assertFalse(np.asarray(diagnostics[5]).any())
             self.assertFalse(np.asarray(diagnostics[6]).any())
 
+    def test_probability_recording_preserves_sushi_diagnostics_and_perturbations(self):
+        helper = SimpleNamespace(ScannedRNN=SimpleNamespace(
+            initialize_carry=lambda count, width: jnp.zeros((count, width))))
+        for mode in ("sampled", "greedy"):
+            with self.subTest(mode=mode):
+                options = {"action_selection": mode, "action_dropout": 1.}
+                reference = evaluation.make_episode(
+                    helper, {"GRU_HIDDEN_DIM": 2}, self.env, FakeNetwork(), **options)
+                recorded = evaluation.make_episode(
+                    helper, {"GRU_HIDDEN_DIM": 2}, self.env, FakeNetwork(),
+                    record_action_probs=True, **options)
+                expected = jax.device_get(reference({}, np.uint32(1000)))
+                initial, trace, diagnostics, probabilities = jax.device_get(
+                    recorded({}, np.uint32(1000)))
+                for actual, old in zip(jax.tree.leaves((initial, trace, diagnostics)),
+                                       jax.tree.leaves(expected), strict=True):
+                    np.testing.assert_array_equal(actual, old)
+                np.testing.assert_array_equal(
+                    probabilities, np.broadcast_to(np.asarray(FakePolicy().probs[0]), (4, 2, 7)))
+                self.assertTrue(diagnostics[5].all())
+
     def test_action_dropout_overrides_only_executed_actions(self):
         helper = SimpleNamespace(ScannedRNN=SimpleNamespace(
             initialize_carry=lambda count, width: jnp.zeros((count, width))))
@@ -220,6 +241,21 @@ class SushiPolicyEvaluationTests(unittest.TestCase):
             self.assertTrue((output / "replay.html").exists())
             self.assertTrue((output / "rollout.gif").exists())
             self.assertEqual(json.loads((run / "config.json").read_text())["ENV_KWARGS"]["rules"]["max_steps"], 8)
+            from evals_shared.format import parse_document
+            exported = parse_document((output / "evaluation.json").read_bytes())
+            self.assertEqual(len(exported["episodes"]), 2)
+            self.assertEqual(len(exported["checkpoints"]), 1)
+            self.assertEqual(exported["environment"]["config"]["rules"]["max_steps"], 4)
+            self.assertEqual(exported["training_runs"][0]["config"]["ENV_KWARGS"]["rules"]["max_steps"], 8)
+            self.assertIsNone(exported["checkpoints"][0]["progress"])
+            for index, episode in enumerate(exported["episodes"]):
+                self.assertEqual(episode["recording"]["metadata"]["episode"], index)
+                self.assertEqual(len(episode["recording"]["steps"]), 5)
+                self.assertIsNone(episode["recording"]["steps"][0]["agents"][0]["action"])
+                self.assertIn("proposed_action_code", episode["recording"]["steps"][1]["agents"][0])
+            self.assertNotIn(str(run), (output / "evaluation.json").read_text())
+            self.assertNotIn('"frames"', (output / "evaluation.json").read_text())
+            self.assertNotIn('"params"', (output / "evaluation.json").read_text())
 
     def test_no_replay_and_argument_bounds(self):
         with TemporaryDirectory() as tmp:
@@ -232,6 +268,7 @@ class SushiPolicyEvaluationTests(unittest.TestCase):
                 render.assert_not_called()
             self.assertFalse((output / "replay.html").exists())
             self.assertTrue((output / "summary.json").exists())
+            self.assertTrue((output / "evaluation.json").exists())
         for kwargs in ({"episodes": 0}, {"steps": 0}, {"eval_seed": -1}, {"action_selection": "expert"},
                        {"action_dropout": -.1}, {"action_dropout": 1.1}, {"action_dropout": float("nan")},
                        {"random_action_prob": -1}, {"random_action_prob": 2},

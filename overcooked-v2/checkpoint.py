@@ -203,12 +203,24 @@ def save_checkpoint(output, state, metrics_parts, update, config,
 
     _write_state(temp / STATE_FILE, state)
     np.savez_compressed(temp / METRICS_FILE, **metrics)
+    # Inference weights and exact progress travel with each selected checkpoint.
+    # Serialization does not touch training state or consume a random key.
+    import jax
+    from flax import serialization
+    weights = serialization.to_bytes(jax.device_get(state[0].params))
+    _write_synced(temp / "params.msgpack", weights)
+    imitation = config.get("TRAINING_METHOD") == "behavior_cloning"
+    progress = int(update) if imitation else int(update * config["NUM_ENVS"] * config["NUM_STEPS"])
+    checkpoint_info = {"sha256": hashlib.sha256(weights).hexdigest(), "progress": progress,
+                       "progress_unit": "optimizer_updates" if imitation else "environment_steps"}
+    _write_synced(temp / "checkpoint.json", (json.dumps(checkpoint_info, indent=2) + "\n").encode())
     meta = {
         "format_version": FORMAT_VERSION,
         "update": int(update),
         "config_hash": config_hash(config),
         "algorithm": config.get("ALGORITHM"),
         "algorithm_source_hash": file_hash(algorithm_source),
+        **checkpoint_info,
     }
     # meta.json is written last: its presence marks the checkpoint as complete.
     _write_synced(temp / META_FILE, (json.dumps(meta, indent=2) + "\n").encode())

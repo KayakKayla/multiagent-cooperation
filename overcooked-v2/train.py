@@ -12,10 +12,12 @@ import time
 from datetime import datetime, timezone
 from importlib.metadata import version
 from pathlib import Path
+from uuid import uuid4
 
 from omegaconf import OmegaConf
 
 import checkpoint as ckpt
+from shared_evals import device_info, recorded_source_identity
 from scenarios import make_env
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -201,6 +203,10 @@ def save_results(state, metrics, output: Path, elapsed: float, resumed_from) -> 
 
     weights = output / "params.msgpack"
     weights.write_bytes(serialization.to_bytes(params))
+    (output / "checkpoint.json").write_text(json.dumps({
+        "sha256": hashlib.sha256(weights.read_bytes()).hexdigest(),
+        "progress": int(metrics["env_step"][-1]), "progress_unit": "environment_steps",
+    }, indent=2) + "\n")
     # Reload and run the model once to check the saved policy is usable.
     verify_checkpoint(state, weights)
 
@@ -286,6 +292,9 @@ def run(args, config, run_dir, resume_path) -> None:
         (output / "config.json").write_text(json.dumps(config, indent=2) + "\n")
         # Source/version/device details help explain differences between machines.
         metadata = {
+            "source_run_id": "run:" + str(uuid4()),
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "device": device_info(backend=jax.default_backend(), devices=jax.devices()),
             "upstream_revision": (SCRIPT_DIR / "UPSTREAM_REVISION").read_text().strip(),
             **runtime_info(),
             **git_state(),
@@ -296,6 +305,7 @@ def run(args, config, run_dir, resume_path) -> None:
     else:
         output = run_dir
         metadata = json.loads((output / "metadata.json").read_text())
+        metadata["source_run_id"] = recorded_source_identity(output, recorded=metadata.get("source_run_id"))
         resumed_from = int(json.loads((resume_path / ckpt.META_FILE).read_text())["update"])
         now = runtime_info()
         for name in ("backend", "versions"):

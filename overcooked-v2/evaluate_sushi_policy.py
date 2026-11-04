@@ -9,7 +9,6 @@ import csv
 from datetime import datetime, timezone
 import hashlib
 import json
-import math
 import os
 from pathlib import Path
 
@@ -28,109 +27,14 @@ from scenarios.oc2_sushi_1_3.layout import Tile
 from train import ALGORITHMS, SCRIPT_DIR, load_baseline
 
 
-def validate_perturbations(action_dropout, random_action_prob, spawn_jitter):
-    for name, probability in (("action_dropout", action_dropout),
-                              ("random_action_prob", random_action_prob)):
-        if not math.isfinite(probability) or not 0 <= probability <= 1:
-            raise ValueError(name + " must be a finite probability between zero and one")
-    if action_dropout and random_action_prob:
-        raise ValueError("Use separate dropout and random-action sweeps")
-    if not isinstance(spawn_jitter, int) or not 0 <= spawn_jitter <= 2:
-        raise ValueError("spawn_jitter must be an integer radius from zero through two")
+from evaluation_core import (make_episode as _make_episode, validate_perturbations,
+                             perturb_initial_state, iterate_episodes, EvaluationExport,
+                             load_checkpoint, policy_config_path)
 
 
-def perturb_initial_state(env, initial, seed, spawn_jitter=0, random_facing=False):
-    """Jitter only chef poses, preserving the empty kitchen and its resources.
-
-    Positions are sampled jointly and uniformly among valid distinct FLOOR pairs
-    within the declared Manhattan radius. Facing uses a separate folded stream.
-    """
-    pose_key = jax.random.fold_in(jax.random.PRNGKey(seed), 0x53555350)
-    if spawn_jitter:
-        offsets = jnp.array([(x, y) for y in range(-spawn_jitter, spawn_jitter + 1)
-                             for x in range(-spawn_jitter, spawn_jitter + 1)
-                             if abs(x) + abs(y) <= spawn_jitter], dtype=jnp.int32)
-        candidates = initial.positions[:, None] + offsets[None]
-        inside = ((candidates >= 0) & (candidates < jnp.array([env.width, env.height]))).all(axis=-1)
-        cells = jnp.clip(candidates[:, :, 1] * env.width + candidates[:, :, 0], 0, env.width * env.height - 1)
-        floor = inside & (env.flat_tiles[cells] == Tile.FLOOR)
-        distinct = (candidates[0, :, None] != candidates[1, None, :]).any(axis=-1)
-        valid = floor[0, :, None] & floor[1, None, :] & distinct
-        # The unperturbed valid spawn pair is always among the candidates.
-        logits = jnp.where(valid.reshape(-1), 0., -jnp.inf)
-        choice = jax.random.categorical(jax.random.fold_in(pose_key, 1), logits)
-        count = len(offsets)
-        positions = jnp.stack([candidates[0, choice // count], candidates[1, choice % count]])
-        initial = initial._replace(positions=positions)
-    if random_facing:
-        directions = jax.random.randint(jax.random.fold_in(pose_key, 2), (env.num_agents,), 0, 4)
-        initial = initial._replace(directions=directions)
-    return initial
-
-
-def make_episode(module, config, env, network, action_selection="sampled", *,
-                 action_dropout=0., random_action_prob=0., spawn_jitter=0,
-                 random_facing=False):
-    """Network proposals are optionally perturbed; actual observations close the loop."""
-    if action_selection not in ("sampled", "greedy"):
-        raise ValueError("action_selection must be sampled or greedy")
-    validate_perturbations(action_dropout, random_action_prob, spawn_jitter)
-
-    @jax.jit
-    def play(params, seed):
-        key, reset_key = jax.random.split(jax.random.PRNGKey(seed))
-        observations, initial = env.reset(reset_key)
-        if spawn_jitter or random_facing:
-            initial = perturb_initial_state(env, initial, seed, spawn_jitter, random_facing)
-            observations = env.get_obs(initial)
-        perturbation_key = jax.random.fold_in(jax.random.PRNGKey(seed), 0x53555341)
-        hidden = module.ScannedRNN.initialize_carry(env.num_agents, config["GRU_HIDDEN_DIM"])
-
-        def step(carry, _):
-            observations, state, hidden, key = carry
-            key, action_key, step_key = jax.random.split(key, 3)
-            batch = jnp.stack([observations[agent] for agent in env.agents])
-            inputs = (batch[None], jnp.full((1, env.num_agents), state.done))
-            hidden, policy, values = network.apply(params, hidden, inputs)
-            if action_selection == "sampled":
-                proposed = policy.sample(seed=action_key)[0]
-            else:
-                proposed = jnp.argmax(policy.probs, axis=-1)[0]
-            actions = proposed
-            drop_mask = jnp.zeros((env.num_agents,), dtype=jnp.bool_)
-            random_mask = jnp.zeros((env.num_agents,), dtype=jnp.bool_)
-            # Folded streams never consume or change the policy/reset key chain.
-            noise_key = jax.random.fold_in(perturbation_key, state.time)
-            if action_dropout:
-                drop_mask = jax.random.bernoulli(jax.random.fold_in(noise_key, 1),
-                                                 action_dropout, (env.num_agents,))
-                actions = jnp.where(drop_mask, int(Action.STAY), actions)
-            if random_action_prob:
-                random_mask = jax.random.bernoulli(jax.random.fold_in(noise_key, 2),
-                                                   random_action_prob, (env.num_agents,))
-                random_actions = jax.random.randint(jax.random.fold_in(noise_key, 3),
-                                                    (env.num_agents,), 0, env.num_actions)
-                actions = jnp.where(random_mask, random_actions, actions)
-            observations, after, rewards, _, info = env.step_env(
-                step_key, state, dict(zip(env.agents, actions)))
-            deliveries = after.deliveries - state.deliveries
-            reward = rewards[env.agents[0]]  # Shared reward is counted once.
-            finite = (jnp.all(jnp.isfinite(policy.probs)) & jnp.all(jnp.isfinite(values))
-                      & jnp.all(jnp.isfinite(hidden)))
-            normalized = jnp.all(jnp.abs(policy.probs.sum(axis=-1) - 1) < 1e-5)
-            delivered_slots = ((state.kind == Item.PLATE) & (state.contents == RECIPE)
-                               & (after.kind == Item.DIRTY_PLATE) & (after.location == QUEUED))
-            washed_slots = (state.kind == Item.DIRTY_PLATE) & (after.kind == Item.PLATE)
-            trace = (after, actions, reward, deliveries, jnp.int32(0), finite & normalized)
-            diagnostics = (delivered_slots, washed_slots, info["invalid_action"], info["blocked"],
-                           proposed, drop_mask, random_mask)
-            return (observations, after, hidden, key), (trace, diagnostics)
-
-        _, (trace, diagnostics) = jax.lax.scan(
-            step, (observations, initial, hidden, key), None, env.max_steps)
-        return initial, trace, diagnostics
-
-    return play
+def make_episode(module, config, env, network, action_selection="sampled", **options):
+    return _make_episode(module, config, env, network, action_selection=action_selection,
+                         diagnostics=True, **options)
 
 
 def summarize_episode(initial, trace, diagnostics, env, seed, episode):
@@ -235,7 +139,7 @@ def evaluate_run(run, output=None, episodes=20, eval_seed=1000, action_selection
         raise ValueError("action_selection must be sampled or greedy")
     validate_perturbations(action_dropout, random_action_prob, spawn_jitter)
     run = Path(run).resolve()
-    module, training_config = load_baseline(run / "config.json", None)
+    module, training_config = load_baseline(policy_config_path(run), None)
     config = copy.deepcopy(training_config)
     if config["ENV_KWARGS"]["layout"] != "oc2_sushi_1_3":
         raise ValueError("This evaluator is only for oc2_sushi_1_3")
@@ -243,7 +147,7 @@ def evaluate_run(run, output=None, episodes=20, eval_seed=1000, action_selection
     env = make_env(env_name=config["ENV_NAME"], **config["ENV_KWARGS"])
     network, template = initialize_policy(module, config, env)
     weights = (run / "params.msgpack").read_bytes()
-    params = serialization.from_bytes(template, weights)
+    params = load_checkpoint(run, template)
     if not all(np.isfinite(np.asarray(x)).all() for x in jax.tree.leaves(params)):
         raise ValueError("Saved model contains non-finite weights")
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
@@ -282,11 +186,13 @@ def evaluate_run(run, output=None, episodes=20, eval_seed=1000, action_selection
     play = make_episode(module, config, env, network, action_selection,
                         action_dropout=action_dropout, random_action_prob=random_action_prob,
                         spawn_jitter=spawn_jitter, random_facing=random_facing)
+    export = EvaluationExport(output, env, config, f"trained-{action_selection}", protocol,
+        [{"run": run, "config": training_config, "weights": weights}] * env.num_agents)
     rows, recorded = [], None
-    for episode, seed in enumerate(protocol["episode_seeds"]):
-        initial, trace, diagnostics = jax.device_get(play(params, np.uint32(seed)))
+    for episode, seed, (initial, trace, diagnostics) in iterate_episodes(play, params, protocol["episode_seeds"]):
         row = summarize_episode(initial, trace, diagnostics, env, seed, episode)
         rows.append(row)
+        export.add_episode(episode, seed, initial, trace, row, diagnostics)
         print(f"Episode {episode + 1}/{episodes}: {row['correct_dishes']} dishes; "
               f"first={row['first_delivery_step']}; second={row['second_delivery_step']}", flush=True)
         if recorded is None:
@@ -306,6 +212,7 @@ def evaluate_run(run, output=None, episodes=20, eval_seed=1000, action_selection
     if replay:
         from scenarios.oc2_sushi_1_3.preview import save_policy_preview
         save_policy_preview(env, *recorded, output, f"trained-{action_selection}", eval_seed)
+    export.finish(result)
     print(json.dumps(result, indent=2), flush=True)
     print(f"Results: {output}", flush=True)
     return output, result

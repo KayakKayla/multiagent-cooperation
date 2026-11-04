@@ -8,3 +8,6 @@ __pycache__/
 
 # Machine settings, personal agent context, and local run notes.
 .local/
+
+# Portable local source identities travel with generated/model evidence, not code.
+source-identity*.json

@@ -1,0 +1,15 @@
+[Unit]
+Description=Clean expired evaluation archive previews/sessions
+
+[Service]
+Type=oneshot
+User=evals-site
+Group=evals-site
+WorkingDirectory=/opt/results-site/evals-sharing-website
+EnvironmentFile=/etc/evals-site/site.env
+ExecStart=/opt/results-site/evals-sharing-website/.venv/bin/python -m app.cli cleanup
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/evals-site

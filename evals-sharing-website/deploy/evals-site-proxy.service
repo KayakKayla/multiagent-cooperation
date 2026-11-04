@@ -1,0 +1,18 @@
+[Unit]
+Description=Loopback body-limit proxy for the SE390 evaluation archive
+After=network.target
+
+[Service]
+Type=simple
+# Standard nginx root master / www-data worker privilege separation.
+# This loads ONLY its dedicated config and never starts nginx.service.
+ExecStartPre=/usr/sbin/nginx -t -q -c /etc/nginx/evals-site.conf
+ExecStart=/usr/sbin/nginx -c /etc/nginx/evals-site.conf -g "daemon off;"
+ExecReload=/bin/kill -HUP $MAINPID
+KillSignal=SIGQUIT
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

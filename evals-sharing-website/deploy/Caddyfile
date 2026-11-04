@@ -1,0 +1,7 @@
+# Replace domain after the actual VPS/reverse-proxy configuration is known.
+evals.example.invalid {
+    request_body {
+        max_size 20MiB
+    }
+    reverse_proxy 127.0.0.1:8000
+}

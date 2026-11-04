@@ -8,142 +8,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import jax
-import jax.numpy as jnp
 import numpy as np
 from flax import serialization
 
-from jaxmarl.environments.overcooked_v2.common import (
-    DynamicObject,
-    OvercookedActionsEnum,
-    StaticObject,
-)
 from preview import save_preview
 from train import DEFAULT_CONFIG, SCRIPT_DIR, load_baseline
 from scenarios import make_env
 
 
-def initialize_policy(module, config, env):
-    """Recreate the upstream trainer's exact seed splitting and initial network."""
-    network = module.ActorCriticRNN(env.action_space(env.agents[0]).n, config=config)
-    key = jax.random.split(jax.random.PRNGKey(config["SEED"]), 1)[0]
-    _, parameter_key = jax.random.split(key)
-    # Use the trainer's dummy batch too, so the before policy matches its start.
-    batch = config["NUM_ENVS"]
-    hidden = module.ScannedRNN.initialize_carry(batch, config["GRU_HIDDEN_DIM"])
-    inputs = (
-        jnp.zeros((1, batch, *env.observation_space().shape)),
-        jnp.zeros((1, batch)),
-    )
-    params = jax.jit(lambda key: network.init(key, hidden, inputs))(parameter_key)
-    return network, params
-
-
-def check_run_revision(run, revision):
-    """Reject saved training results that record a different JaxMARL code version."""
-    metadata = json.loads((run / "metadata.json").read_text())
-    if metadata["upstream_revision"] != revision:
-        raise ValueError(f"Saved policy and local upstream revisions differ: {run}")
-
-
-def check_partner_config(config, partner_config):
-    """Check compatibility with the evaluator's shared network and observation setup.
-
-    Refactor or remove these restrictions when each policy can use its own network
-    design and observation settings. Training seeds and hyperparameters may differ.
-    """
-    fields = ("ENV_NAME", "ENV_KWARGS", "ACTIVATION", "FC_DIM_SIZE", "GRU_HIDDEN_DIM")
-    differences = [field for field in fields if config[field] != partner_config[field]]
-    if config.get("ALGORITHM", "ippo_rnn") != partner_config.get("ALGORITHM", "ippo_rnn"):
-        differences.append("ALGORITHM")
-    if differences:
-        raise ValueError("Policies have incompatible settings: " + ", ".join(differences))
-
-
-def load_checkpoint(run, template):
-    params = serialization.from_bytes(template, (run / "params.msgpack").read_bytes())
-    for value, expected in zip(jax.tree.leaves(params), jax.tree.leaves(template), strict=True):
-        if np.shape(value) != np.shape(expected) or not np.isfinite(np.asarray(value)).all():
-            raise ValueError(f"Checkpoint has incompatible shapes or non-finite weights: {run}")
-    return params
-
-
-def delivery_counts(before, after, actions):
-    """Count actual dish removals at serving stations, including simultaneous ones."""
-    forward = jax.vmap(lambda agent: agent.get_fwd_pos())(before.agents)
-    at_goal = before.grid[forward.y, forward.x, 0] == StaticObject.GOAL
-    inventory = before.agents.inventory
-    delivered = (
-        (actions == OvercookedActionsEnum.interact)
-        & at_goal
-        & ((inventory & DynamicObject.COOKED) != 0)
-        & (after.agents.inventory == DynamicObject.EMPTY)
-    )
-    correct_recipe = inventory == (
-        before.recipe | DynamicObject.PLATE | DynamicObject.COOKED
-    )
-    return jnp.sum(delivered & correct_recipe), jnp.sum(delivered & ~correct_recipe)
+from evaluation_core import (initialize_policy, check_run_revision, check_partner_config,
+                             load_checkpoint, make_episode as _make_episode,
+                             iterate_episodes, EvaluationExport, policy_config_path)
 
 
 def make_episode(module, config, env, network, record_action_probs=False):
-    """Compile playback only: sample actions, advance the kitchen, record events."""
-    @jax.jit
-    def play(params, seed, partner_params=None):
-        key, reset_key = jax.random.split(jax.random.PRNGKey(seed))
-        observations, initial = env.reset(reset_key)
-        hidden = module.ScannedRNN.initialize_carry(
-            env.num_agents, config["GRU_HIDDEN_DIM"]
-        )
-
-        def step(carry, _):
-            observations, state, hidden, key = carry
-            key, action_key, step_key = jax.random.split(key, 3)
-            # Each chef keeps its own memory, whether weights are shared or different.
-            obs_batch = jnp.stack([observations[agent] for agent in env.agents])
-            dones = jnp.full((1, env.num_agents), state.done)
-            if partner_params is None:
-                # Preserve the original shared-policy playback and sampling behavior.
-                hidden, policy, _ = network.apply(params, hidden, (obs_batch[None], dones))
-            else:
-                memories, logits = [], []
-                # This two-chef loop is compiled by JAX, not repeated in Python at runtime.
-                for chef, weights in enumerate((params, partner_params)):
-                    inputs = (obs_batch[None, chef:chef + 1], dones[:, chef:chef + 1])
-                    memory, chef_policy, _ = network.apply(
-                        weights, hidden[chef:chef + 1], inputs
-                    )
-                    memories.append(memory)
-                    logits.append(chef_policy.logits)
-                hidden = jnp.concatenate(memories, axis=0)
-                policy = module.distrax.Categorical(logits=jnp.concatenate(logits, axis=1))
-            # Sample both actions with the same random-number layout for every pairing.
-            action_probs = policy.probs[0]
-            actions = policy.sample(seed=action_key)[0]
-            action_dict = {agent: actions[i] for i, agent in enumerate(env.agents)}
-            # step_env retains the final kitchen, whereas env.step auto-resets it.
-            observations, after, rewards, _, _ = env.step_env(
-                step_key, state, action_dict
-            )
-            if env.name == "oc2_sushi_1_3":
-                correct, wrong = after.deliveries - state.deliveries, jnp.int32(0)
-            else:
-                correct, wrong = delivery_counts(state, after, actions)
-            # Reward is shared: read it once. Do not add training's shaping bonuses.
-            reward = rewards[env.agents[0]]
-            finite = jnp.all(jnp.isfinite(policy.probs))
-            trace = (after, actions, reward, correct, wrong, finite)
-            recorded = (trace, action_probs) if record_action_probs else trace
-            return (observations, after, hidden, key), recorded
-
-        _, recorded = jax.lax.scan(
-            step, (observations, initial, hidden, key), None, env.max_steps
-        )
-
-        if record_action_probs:
-            trace, action_probs = recorded
-            return initial, trace, action_probs
-        return initial, recorded
-
-    return play
+    return _make_episode(module, config, env, network,
+                         record_action_probs=record_action_probs)
 
 
 def main():
@@ -179,11 +59,11 @@ def main():
         if source_run:
             check_run_revision(source_run, revision)
     module, config = load_baseline(
-        run / "config.json" if run else DEFAULT_CONFIG, args.seed
+        policy_config_path(run) if run else DEFAULT_CONFIG, args.seed
     )
     partner_config = config
     if partner_run:
-        partner_config = json.loads((partner_run / "config.json").read_text())
+        partner_config = json.loads(policy_config_path(partner_run).read_text())
         check_partner_config(config, partner_config)
     env = make_env(env_name=config["ENV_NAME"], **config["ENV_KWARGS"])
     if partner_run and env.num_agents != 2:
@@ -194,7 +74,7 @@ def main():
         params = load_checkpoint(run, params)
     if not all(np.isfinite(np.asarray(x)).all() for x in jax.tree.leaves(params)):
         raise ValueError("Policy contains non-finite weights.")
-    checkpoint_bytes = serialization.to_bytes(jax.device_get(params))
+    checkpoint_bytes = (run / "params.msgpack").read_bytes() if run else serialization.to_bytes(jax.device_get(params))
 
     mode = "cross-policy" if partner_run else ("trained" if run else "untrained")
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
@@ -209,7 +89,7 @@ def main():
         (output / "partner-config.json").write_text(json.dumps(partner_config, indent=2) + "\n")
     policy_seeds = [config["SEED"], partner_config["SEED"]]
     partner_bytes = (
-        serialization.to_bytes(jax.device_get(partner_params))
+        (partner_run / "params.msgpack").read_bytes()
         if partner_run else checkpoint_bytes
     )
     # Record both checkpoint identities and their fixed assignment to chef colors.
@@ -242,11 +122,14 @@ def main():
         flush=True,
     )
     print(f"Chef 1 (red): seed {policy_seeds[0]}; chef 2 (blue): seed {policy_seeds[1]}", flush=True)
-    play = make_episode(module, config, env, network, True)
+    play = make_episode(module, config, env, network, record_action_probs=True)
+    export = EvaluationExport(output, env, config, mode, protocol, [
+        {"run": run, "config": config, "weights": checkpoint_bytes, "initialization": not run},
+        {"run": partner_run or run, "config": partner_config, "weights": partner_bytes, "initialization": not run},
+    ])
     rows = []
     recorded = None
-    for episode, seed in enumerate(seeds):
-        initial, trace, action_probs = jax.device_get(play(params, np.uint32(seed), partner_params))
+    for episode, seed, (initial, trace, action_probs) in iterate_episodes(play, params, seeds, partner_params):
         states, actions, rewards, correct, wrong, finite = trace
         np.savez_compressed(
             output / f"decisions-{episode:03d}.npz",
@@ -263,6 +146,7 @@ def main():
             "correct_dishes": int(correct.sum()), "wrong_dishes": int(wrong.sum()),
         }
         rows.append(row)
+        export.add_episode(episode, seed, initial, trace, row)
         print(f"Episode {episode + 1}/{len(seeds)}: {row}", flush=True)
         if episode == 0:
             recorded = (initial, trace)
@@ -288,6 +172,7 @@ def main():
         "episodes_with_a_correct_delivery": sum(row["correct_dishes"] > 0 for row in rows),
     }
     (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    export.finish(summary)
     print(json.dumps(summary, indent=2), flush=True)
     print(f"Replay (open in a browser): {output / 'replay.html'}", flush=True)
     print(f"GIF: {output / 'rollout.gif'}", flush=True)

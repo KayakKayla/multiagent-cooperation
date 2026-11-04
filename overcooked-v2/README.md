@@ -220,6 +220,12 @@ and resulting trajectories will differ after learning.
 Each evaluation creates a new folder under `outputs/evaluate/` containing:
 
 - `episodes.csv`: raw team reward, correct/wrong deliveries, steps, and seed per episode.
+- `evaluation.json`: portable, uploadable evidence with every episode's recorded
+  states, exact checkpoint assignments and provenance; no weights or PNG frames.
+  Export size is printed; the sharing website accepts at most 20 MiB. See the
+  [format/export guide](../evals-sharing-website/docs/format-and-export.md), including
+  conversion of existing outputs without rerunning evaluation. Local previews
+  continue to show the first episode.
 - `summary.json`: averages and total deliveries across the episodes.
 - `config.json` and `protocol.json`: environment/model settings, test seeds, policy hash,
   source revision, and the recorded episode selection. An untrained evaluation also
@@ -228,6 +234,9 @@ Each evaluation creates a new folder under `outputs/evaluate/` containing:
   step, chef positions/facing/inventories/actions, pot status, delivery jumps, and
   raw team score. **Illustrated / Original** compares the same recorded state.
 - `rollout.gif`, `initial.png`, and `final.png`: the existing annotated kitchen previews.
+- `decisions-000.npz`, etc.: the pre-action probabilities, executed actions, agent
+  IDs, and evaluation seed for each episode. Upstream-layout GIFs include action
+  probabilities and milestone trajectories.
 
 Open `replay.html` directly in a browser on Windows, Linux, or macOS. It starts paused
 at step 0 and works offline; viewers need no simulator environment or GPU. Drag the
@@ -269,7 +278,8 @@ actions, totals, and original PNG frames. The restyling command uses standard-li
 Python only. [Artwork and renderer notes](assets/replay/README.md).
 
 The HTML replay and GIF always show the **first** test episode. The HTML retains every
-step; the GIF has one frame per two steps. Their score
+step; upstream-layout GIFs also retain every step, while sushi GIFs use one frame
+per two steps. Their score
 is for that episode, not the five-episode average. The dashboard is for spectators and
 adds nothing to the policy's observations. Correct and wrong dishes are counted as
 separate delivery events, including simultaneous deliveries. The shared team reward is

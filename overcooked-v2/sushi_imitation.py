@@ -9,6 +9,8 @@ import json
 import os
 from pathlib import Path
 import time
+from datetime import datetime, timezone
+from uuid import uuid4
 
 import jax
 import jax.numpy as jnp
@@ -20,6 +22,7 @@ from flax.training.train_state import TrainState
 import checkpoint as ckpt
 from scenarios import make_env
 from train import load_algorithm, load_config, git_state
+from shared_evals import device_info
 
 ROOT = Path(__file__).resolve().parent
 
@@ -107,6 +110,7 @@ def save_artifacts(output, state, key, history, config):
     temporary = output / 'params.msgpack.tmp'
     temporary.write_bytes(serialization.to_bytes(params))
     os.replace(temporary, output / 'params.msgpack')
+    (output / 'checkpoint.json').write_text((path / 'checkpoint.json').read_text())
     return path
 
 
@@ -193,6 +197,9 @@ def main():
         output.mkdir(parents=True, exist_ok=False)
         (output / 'config.json').write_text(json.dumps(config, indent=2) + '\n')
         (output / 'metadata.json').write_text(json.dumps({
+            'source_run_id': 'run:' + str(uuid4()),
+            'started_at': datetime.now(timezone.utc).isoformat(),
+            'device': device_info(backend=jax.default_backend(), devices=jax.devices()),
             'upstream_revision': (ROOT / 'UPSTREAM_REVISION').read_text().strip(),
             'backend': jax.default_backend(), 'jax': jax.__version__, **git_state(),
             'parameter_count': sum(x.size for x in jax.tree.leaves(params)),
