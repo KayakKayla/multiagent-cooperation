@@ -5,6 +5,7 @@ param(
     [string]$Layout = '',
     [int]$Seed = 42,
     [switch]$DryRun,
+    [switch]$CudaGraphs,
     [switch]$Untrained,
     [string]$Run = '',
     [string]$PartnerRun = '',
@@ -25,6 +26,10 @@ if ($WslDistribution) {
 }
 $runArguments = @('./run.sh', $Mode)
 
+if ($CudaGraphs -and $Mode -ne 'train') {
+    throw '-CudaGraphs is available with train mode.'
+}
+
 if ($Mode -ne 'evaluate' -and ($Untrained -or $Run -or $PartnerRun -or $PSBoundParameters.ContainsKey('Episodes') -or $PSBoundParameters.ContainsKey('EvalSeed'))) {
     throw '-Untrained, -Run, -PartnerRun, -Episodes and -EvalSeed are for evaluate mode.'
 }
@@ -34,6 +39,9 @@ if ($Mode -eq 'train') {
         throw 'Training uses configs/coord_ring.yaml. Omit -Layout for this baseline.'
     }
     $runArguments += @('--seed', "$Seed")
+    if ($CudaGraphs) {
+        $runArguments += @('--config', 'configs/coord_ring_cuda_graphs.yaml')
+    }
     if ($DryRun) {
         $runArguments += '--dry-run'
     }

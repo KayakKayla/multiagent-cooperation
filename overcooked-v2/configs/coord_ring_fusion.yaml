@@ -1,0 +1,48 @@
+# Opt-in CUDA runtime experiment. PPO, model, and environment match coord_ring.yaml.
+ENV_NAME: overcooked_v2
+ENV_KWARGS:
+  layout: coord_ring
+  agent_view_size: 2
+  random_agent_positions: true
+  negative_rewards: true
+  max_steps: 400
+  observation_type: default
+  random_reset: false
+  start_cooking_interaction: false
+  sample_recipe_on_delivery: false
+  indicate_successful_delivery: false
+
+LR: 0.0005
+ANNEAL_LR: true
+LR_WARMUP: 0.05
+NUM_ENVS: 256
+NUM_STEPS: 256
+NUM_MINIBATCHES: 64
+UPDATE_EPOCHS: 4
+TOTAL_TIMESTEPS: 10000000
+REW_SHAPING_HORIZON: 5000000
+CNN_FEATURES: 32
+FC_DIM_SIZE: 128
+GRU_HIDDEN_DIM: 128
+ACTIVATION: relu
+CLIP_EPS: 0.2
+ENT_COEF: 0.01
+GAMMA: 0.99
+GAE_LAMBDA: 0.95
+SCALE_CLIP_EPS: false
+VF_COEF: 0.5
+MAX_GRAD_NORM: 0.25
+MINIBATCH_SIZE: 2048
+SEED: 42
+NUM_SEEDS: 1
+ENTITY: ""
+PROJECT: se390-overcooked-v2
+WANDB_MODE: disabled
+ALGORITHM: ippo_rnn
+CHECKPOINT_INTERVAL_UPDATES: 10
+CHECKPOINT_KEEP_LAST: 3
+
+RUNTIME:
+  XLA_FLAGS:
+    - --xla_gpu_deterministic_ops=true
+    - --xla_gpu_enable_command_buffer=FUSION

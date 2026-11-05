@@ -172,6 +172,20 @@ To start the baseline yourself:
 .\overcooked-v2\run.ps1 train
 ```
 
+An opt-in CUDA graph configuration preserves the baseline environment, model,
+PPO settings, and checkpoint interval while enabling GPU command buffers:
+
+```powershell
+.\overcooked-v2\run.ps1 train -CudaGraphs -DryRun
+.\overcooked-v2\run.ps1 train -CudaGraphs
+```
+
+Linux equivalent: `bash overcooked-v2/run.sh train --config configs/coord_ring_cuda_graphs.yaml`.
+The ordinary training command keeps its existing runtime settings. See the
+[performance experiment guide](benchmarks/README.md) for measurements and
+correctness/learning comparisons. A fusion-only configuration is also available
+at `configs/coord_ring_fusion.yaml`.
+
 Keep the terminal open. Compilation happens before update messages appear. The command
 prints its results directory and saves configuration, version/source metadata, and
 per-update progress under a new `outputs/train/coord_ring-seed42-<timestamp>/` directory.
