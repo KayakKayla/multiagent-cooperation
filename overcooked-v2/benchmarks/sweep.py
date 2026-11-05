@@ -16,7 +16,7 @@ def run_case(root, name, arguments, timeout=360, program='ppo.py'):
     directory = root/name
     if (directory/'result.json').exists():
         previous=json.loads((directory/'result.json').read_text())
-        return {'case':name,'status':'already_complete' if previous.get('status')=='complete' else 'existing_failed'}
+        return {'case':name,'status':'already_complete' if previous.get('status','complete')=='complete' else 'existing_failed'}
     log = root/(name+'.log')
     command = [sys.executable,'-u',str(ROOT/'benchmarks'/program),'--output',str(directory),*arguments]
     stop = threading.Event()
