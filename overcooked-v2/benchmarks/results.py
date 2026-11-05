@@ -53,6 +53,7 @@ def main():
         if path.exists():curves.append((name,json.loads(path.read_text())))
     if len(curves)==2:
         fig,axes=plt.subplots(1,2,figsize=(11,4.4),layout='constrained')
+        fig.suptitle('One training run per condition; 32 evaluation episodes per checkpoint',fontsize=11)
         for name,rows in curves:
             style=dict(label='Original' if name=='baseline' else 'CUDA graphs',color='#64717e' if name=='baseline' else '#087f8c',
                        marker='o' if name=='baseline' else 'x',linestyle='-' if name=='baseline' else '--',markersize=4)
@@ -80,7 +81,7 @@ def main():
             writer=csv.DictWriter(out,fieldnames=rows_csv[0].keys());writer.writeheader();writer.writerows(rows_csv)
         fig,axes=plt.subplots(1,2,figsize=(11,4.7),layout='constrained')
         labels={'partial_reference':'Original PPO + graphs','partial_mb32':'32 minibatches','partial_mb16':'16 minibatches',
-                'partial_env512':'512 kitchens × 128 steps'}
+                'partial_env512':'512 kitchens × 128 steps','partial_unroll16':'GRU unroll 16'}
         for prefix,records in partial.items():
             updates=sorted({r['update'] for r in records})
             means=[];low=[];high=[];times=[]
