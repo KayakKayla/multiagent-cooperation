@@ -1,4 +1,3 @@
-import functools
 from typing import Any, Callable, Dict, NamedTuple, Sequence
 
 import distrax
@@ -18,16 +17,20 @@ from scenarios import make_env, wrap_training
 
 class ScannedRNN(nn.Module):
     metal_compat: bool = False
+    unroll: int = 1
 
-    @functools.partial(
-        nn.scan,
-        variable_broadcast="params",
-        in_axes=0,
-        out_axes=0,
-        split_rngs={"params": False},
-    )
-    @nn.compact
     def __call__(self, carry, x):
+        return nn.scan(
+            type(self)._step,
+            variable_broadcast="params",
+            in_axes=0,
+            out_axes=0,
+            split_rngs={"params": False},
+            unroll=self.unroll,
+        )(self, carry, x)
+
+    @nn.compact
+    def _step(self, carry, x):
         """Applies the module."""
         rnn_state = carry
         ins, resets = x
@@ -143,7 +146,8 @@ class ActorCriticRNN(nn.Module):
 
         rnn_in = (embedding, dones)
         hidden, embedding = ScannedRNN(
-            metal_compat=self.config.get("RUNTIME", {}).get("METAL_COMPATIBILITY", False)
+            metal_compat=self.config.get("RUNTIME", {}).get("METAL_COMPATIBILITY", False),
+            unroll=self.config.get("GRU_UNROLL", 1),
         )(hidden, rnn_in)
 
         actor_mean = nn.Dense(

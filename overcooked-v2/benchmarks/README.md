@@ -1,11 +1,15 @@
 # PPO performance experiments
 
 These opt-in scripts benchmark the pinned Coordination Ring recurrent PPO on a
-single CUDA GPU. They do not change the ordinary trainer, baseline configuration,
-or JaxMARL submodule. Each candidate is generated from the local trainer with
+single CUDA GPU. They preserve the ordinary training defaults, baseline configuration,
+and JaxMARL submodule. Each candidate is generated from the local trainer with
 asserted source anchors, and the generated source and helper snapshots are saved
 with its results. Source changes are experimental until correctness and learning
 results support adoption.
+
+GRU unrolling is also available directly in the production launcher as
+`train.py --gru-unroll` (factor 16), or `run.ps1 train -GruUnroll`. It can be
+combined with `-CudaGraphs`; the setting is recorded in the run configuration.
 
 Use the project's Linux GPU Python from `overcooked-v2/`:
 

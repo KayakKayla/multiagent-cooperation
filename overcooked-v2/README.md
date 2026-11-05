@@ -140,7 +140,8 @@ The intended Modal path should reuse the local path's pinned dependencies, basel
 experiment: Appendix C.1/C.2 and Appendix D.2.1, Table 4 of
 [the OvercookedV2 paper](https://arxiv.org/abs/2503.17821).
 This is **Coordination Ring (`coord_ring`)**, distinct from Grounded Coordination Ring
-(`grounded_coord_ring`). The algorithm and simulator remain pinned, unmodified upstream code.
+(`grounded_coord_ring`). The simulator remains pinned upstream code. The local
+PPO wrapper adds chunked checkpoints and optional GRU unrolling to the upstream algorithm.
 
 Environment:
 
@@ -186,15 +187,35 @@ The ordinary training command keeps its existing runtime settings. See the
 correctness/learning comparisons. A fusion-only configuration is also available
 at `configs/coord_ring_fusion.yaml`.
 
+GRU scan unrolling is also opt-in. `-GruUnroll` uses a factor of 16 and can be
+combined with CUDA graphs:
+
+```powershell
+.\overcooked-v2\run.ps1 train -GruUnroll -DryRun
+.\overcooked-v2\run.ps1 train -CudaGraphs -GruUnroll
+```
+
+Linux equivalent: `bash overcooked-v2/run.sh train --config configs/coord_ring_cuda_graphs.yaml --gru-unroll`.
+Omit the graph configuration to use unrolling alone. The default unroll factor
+remains 1. The selected factor is saved as `GRU_UNROLL` in `config.json` and
+automatically reused by `train.py --resume <run-folder>`. Resume checks reject a
+different factor. It preserves the network and PPO equations, but can change
+floating-point results and learned trajectories; the short learning comparison
+does not establish equal final effectiveness. Existing full-state checkpoints
+retain their algorithm-source check and need their original code revision to
+resume after algorithm edits; their policy weights remain usable for evaluation.
+
 Keep the terminal open. Compilation happens before update messages appear. The command
 prints its results directory and saves configuration, version/source metadata, and
 per-update progress under a new `outputs/train/coord_ring-seed42-<timestamp>/` directory.
 On successful completion it saves `params.msgpack`, numeric `metrics.npz`, and
 `summary.json`, and verifies that the checkpoint reloads. Existing results are not overwritten.
 
-The checkpoint is saved **only on completion**. Ctrl+C stops the run; partial progress
-logs remain, but interrupted runs cannot resume with this launcher. Runtime and full-budget
-GPU memory requirements have not yet been measured. Training statistics describe games played while the weights were changing. Use the
+Full-state checkpoints are saved every ten updates and at completion. Ctrl+C stops
+the run; resume from the latest complete checkpoint with
+`bash overcooked-v2/run.sh train --resume outputs/train/<run-folder>`.
+Saved settings, including GRU unrolling, are reused automatically. Training
+statistics describe games played while the weights were changing. Use the
 separate frozen-policy evaluation below to measure the finished policy.
 
 To run another independent seed later, use `train -Seed 43`. Seeds are local run choices;
@@ -204,8 +225,8 @@ Linux equivalent: `bash overcooked-v2/run.sh train --seed 42`.
 ## Before/after policy evaluation and replays
 
 Training and evaluation are separate commands. Evaluation freezes the policy's weights:
-it plays games and records results, without updating anything. Training saves only the
-final weights, not an optimizer/resume checkpoint, and does not automatically create a GIF.
+it plays games and records results, without updating anything. Training saves
+final policy weights and periodic full-state checkpoints, and does not automatically create a GIF.
 
 Before training, record the freshly initialized **neural policy** (not the random-action
 setup check):

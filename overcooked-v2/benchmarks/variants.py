@@ -34,12 +34,8 @@ def load_variant(options, snapshot=None):
         source = replace_once(source, 'hidden, embedding = ScannedRNN(\n',
                               'hidden, embedding = ScannedRNN(name="ScannedRNN_0",\n')
     if options.get('gru_unroll'):
-        if options.get('fused_gru'):
-            source=replace_once(source,'ScannedRNN(name="ScannedRNN_0",',
-                                f'ScannedRNN(name="ScannedRNN_0", unroll={int(options["gru_unroll"])},')
-        else:
-            source = replace_once(source, '        split_rngs={"params": False},',
-                                  f'        split_rngs={{"params": False}},\n        unroll={int(options["gru_unroll"])},')
+        source = replace_once(source, 'unroll=self.config.get("GRU_UNROLL", 1),',
+                              f'unroll={int(options["gru_unroll"])},')
     if options.get('bf16_cnn'):
         begin,end=source.index('class CNN(nn.Module):'),source.index('class ActorCriticRNN(nn.Module):')
         cnn=source[begin:end].replace('nn.Conv(\n','nn.Conv(\n            dtype=jnp.bfloat16,\n')

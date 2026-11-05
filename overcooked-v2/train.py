@@ -41,6 +41,9 @@ def load_config(config_path: Path, seed: int | None = None) -> dict:
     if name not in ALGORITHMS:
         raise ValueError(f"Unknown ALGORITHM {name!r}; choose from {sorted(ALGORITHMS)}")
     config["ALGORITHM"] = name
+    unroll = config.get("GRU_UNROLL", 1)
+    if type(unroll) is not int or unroll < 1:
+        raise ValueError("GRU_UNROLL must be a positive integer.")
     return config
 
 
@@ -381,6 +384,8 @@ def main() -> None:
     parser.add_argument("--init-weights", type=Path,
                         help="Start a new optimizer from params.msgpack or a run folder.")
     parser.add_argument("--dry-run", action="store_true", help="Inspect without training.")
+    parser.add_argument("--gru-unroll", action="store_true",
+                        help="Opt in to GRU scan unrolling by 16; works with CUDA graphs.")
     parser.add_argument("--experimental-metal", action="store_true",
                         help="Opt in to tested jax-metal workarounds; needs METAL,cpu.")
     args = parser.parse_args()
@@ -394,6 +399,10 @@ def main() -> None:
         run_dir, resume_path = resolve_resume(args.resume)
     config_path = args.config or (run_dir / "config.json" if run_dir else DEFAULT_CONFIG)
     config = load_config(config_path, args.seed)
+    if args.gru_unroll:
+        if run_dir and load_config(run_dir / "config.json").get("GRU_UNROLL", 1) != 16:
+            parser.error("--gru-unroll differs from the saved run; resume with its original setting.")
+        config["GRU_UNROLL"] = 16
     if args.init_weights is not None:
         path = args.init_weights
         if path.is_dir():

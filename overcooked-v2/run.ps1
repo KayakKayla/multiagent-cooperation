@@ -6,6 +6,7 @@ param(
     [int]$Seed = 42,
     [switch]$DryRun,
     [switch]$CudaGraphs,
+    [switch]$GruUnroll,
     [switch]$Untrained,
     [string]$Run = '',
     [string]$PartnerRun = '',
@@ -29,6 +30,9 @@ $runArguments = @('./run.sh', $Mode)
 if ($CudaGraphs -and $Mode -ne 'train') {
     throw '-CudaGraphs is available with train mode.'
 }
+if ($GruUnroll -and $Mode -ne 'train') {
+    throw '-GruUnroll is available with train mode.'
+}
 
 if ($Mode -ne 'evaluate' -and ($Untrained -or $Run -or $PartnerRun -or $PSBoundParameters.ContainsKey('Episodes') -or $PSBoundParameters.ContainsKey('EvalSeed'))) {
     throw '-Untrained, -Run, -PartnerRun, -Episodes and -EvalSeed are for evaluate mode.'
@@ -41,6 +45,9 @@ if ($Mode -eq 'train') {
     $runArguments += @('--seed', "$Seed")
     if ($CudaGraphs) {
         $runArguments += @('--config', 'configs/coord_ring_cuda_graphs.yaml')
+    }
+    if ($GruUnroll) {
+        $runArguments += '--gru-unroll'
     }
     if ($DryRun) {
         $runArguments += '--dry-run'
