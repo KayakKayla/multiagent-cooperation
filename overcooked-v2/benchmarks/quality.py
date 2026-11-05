@@ -9,10 +9,10 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 
 
-def production_equivalence(root):
+def production_equivalence(root,candidate='graphs'):
     import numpy as np
     a=json.loads((root/'production_baseline/result.json').read_text())
-    b=json.loads((root/'production_graphs/result.json').read_text())
+    b=json.loads((root/f'production_{candidate}/result.json').read_text())
     left={x['update']:x for x in a['checkpoints']}
     right={x['update']:x for x in b['checkpoints']}
     hashes={str(step):left[step]['sha256']==right[step]['sha256'] for step in left.keys()&right.keys()}
@@ -25,17 +25,20 @@ def production_equivalence(root):
             same=x.files==y.files and all(np.array_equal(x[k],y[k]) for k in x.files)
             result[filename+'_bitwise_identical']=same
     result['production_seconds']={name:x['production_summary']['seconds_including_compilation']
-                                 for name,x in [('baseline',a),('graphs',b)]}
-    result['speedup']=result['production_seconds']['baseline']/result['production_seconds']['graphs']
-    (root/'production-equivalence.json').write_text(json.dumps(result,indent=2))
+                                 for name,x in [('baseline',a),(candidate,b)]}
+    result['speedup']=result['production_seconds']['baseline']/result['production_seconds'][candidate]
+    (root/('production-equivalence.json' if candidate=='graphs' else 'production-'+candidate+'-equivalence.json')).write_text(json.dumps(result,indent=2))
     print(json.dumps(result),flush=True)
 
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,required=True)
-    parser.add_argument('--stage',choices=('production','partial'),required=True)
+    parser.add_argument('--stage',choices=('production','fusion','partial'),required=True)
     parser.add_argument('--updates',type=int,default=48,help='Partial-run update budget; original LR/shaping schedules are retained')
+    parser.add_argument('--command-buffer',default='default',help='Capture mode shared by all partial conditions')
+    parser.add_argument('--conditions',nargs='+',help='Optional partial condition names, e.g. reference mb32 env512')
+    parser.add_argument('--seeds',nargs='+',type=int,default=[42,43,44])
     parser.add_argument('--deadline-epoch',type=float,help='Do not start a partial run that is unlikely to finish before this time')
     args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
     from benchmarks.sweep import run_case
@@ -54,6 +57,20 @@ def main():
                      ['--run',str((args.output/('production_'+name)).resolve()),'--episodes','100',
                       '--eval-seed','9000','--only-final'],program='evaluate_saved.py')
         return
+    if args.stage=='fusion':
+        run_case(args.output,'production_fusion',
+                 ['--config',str(ROOT/'configs/coord_ring_fusion.yaml'),'--max-seconds','1800',
+                  '--reference-policies',str((args.output/'production_baseline/policies.json').resolve())],
+                 timeout=1860,program='production_run.py')
+        result=json.loads((args.output/'production_fusion/result.json').read_text())
+        if result['status']=='complete':
+            production_equivalence(args.output,'fusion')
+            run_case(args.output,'production_fusion_evaluation',
+                     ['--run',str((args.output/'production_fusion').resolve())],program='evaluate_saved.py')
+            run_case(args.output,'production_fusion_final100',
+                     ['--run',str((args.output/'production_fusion').resolve()),'--episodes','100',
+                      '--eval-seed','9000','--only-final'],program='evaluate_saved.py')
+        return
     # All partial runs retain the original 152-update LR and shaping schedules.
     settings=[('partial_reference',{},[],'graphs_default_callback'),
               ('partial_mb32',{'host_logging':True},['--minibatches','32'],'graphs_minibatches32'),
@@ -67,11 +84,13 @@ def main():
         if path.exists() and ref.exists():
             if json.loads(path.read_text())['warmed_median_seconds_per_update']<.85*json.loads(ref.read_text())['warmed_median_seconds_per_update']:
                 recurrent.append((json.loads(path.read_text())['warmed_median_seconds_per_update'],unroll))
-    if recurrent:
+    if recurrent and args.command_buffer=='default':
         _,unroll=min(recurrent)
         settings.insert(1,(f'partial_unroll{unroll}',{'host_logging':True,'gru_unroll':unroll},[],f'graphs_default_unroll{unroll}'))
+    if args.conditions:
+        settings=[x for x in settings if x[0].removeprefix('partial_') in args.conditions]
     # Complete paired conditions for seed 42 before spending time on more seeds.
-    for seed in (42,43,44):
+    for seed in args.seeds:
         for prefix,options,extra,timing in settings:
             name=f'{prefix}_seed{seed}'
             path=args.output/timing/'result.json'
@@ -84,7 +103,7 @@ def main():
                 print(json.dumps(dict(event='skipped',case=name,reason='time budget')),flush=True)
                 if prefix=='partial_reference':break
                 continue
-            arguments=['--options',json.dumps(options),'--command-buffer','default','--stop-after',str(args.updates),
+            arguments=['--options',json.dumps(options),'--command-buffer',args.command_buffer,'--stop-after',str(args.updates),
                        '--eval-every','16','--episodes','32','--seed',str(seed),*extra]
             run_case(args.output,name,arguments,timeout=max(300,int(estimate*1.7)))
 

@@ -107,6 +107,18 @@ skipping; it preserves the original schedules rather than compressing them to
 48 updates. The final checkpoints of partial runs can be resumed exactly.
 Use `--updates 32` on the partial stage for a shorter paired study; the original
 learning-rate and reward-shaping schedules are still preserved.
+Use `--seeds 42 --conditions reference unroll16 mb32` to restrict the study;
+the unrolling condition is selected from existing timing results. Optional
+`production_run.py --stop-after-checkpoint 10` retains the original schedule
+while bounding the run at a saved checkpoint. `--reference-policies` stops at
+the first saved weight mismatch rather than spending a complete training budget
+on a failed bitwise-equivalence hypothesis. Process termination occurs only
+after the checkpoint weights have been copied to the measurement directory.
+
+Passing a two-update exactness check does not establish full-run equivalence.
+Runtime-only compiler settings can change later learned weights even when the
+PPO equations and all hyperparameters are unchanged. Inspect production hashes
+and independent policy evaluations before treating such a setting as equivalent.
 
 The extras group also compares native CPU training, two independent GPU seeds
 vectorized together, and checkpoint/resume recovery. Two-seed batching measures

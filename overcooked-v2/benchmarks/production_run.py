@@ -21,7 +21,10 @@ def main():
     parser.add_argument('--config',type=Path,default=ROOT/'configs/coord_ring.yaml')
     parser.add_argument('--seed',type=int,default=42)
     parser.add_argument('--max-seconds',type=int,default=4200)
+    parser.add_argument('--reference-policies',type=Path,help='Stop if a saved checkpoint differs from these reference weights')
+    parser.add_argument('--stop-after-checkpoint',type=int,help='Stop after this saved update without shortening the original schedules')
     args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=False)
+    reference={x['update']:x['sha256'] for x in json.loads(args.reference_policies.read_text())} if args.reference_policies else {}
     command=['bash',str(ROOT/'run.sh'),'train','--config',str(args.config.resolve()),'--seed',str(args.seed)]
     started=time.monotonic();stop=threading.Event();timed_out=threading.Event()
     process=subprocess.Popen(command,cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,
@@ -31,7 +34,7 @@ def main():
             timed_out.set();os.killpg(process.pid,signal.SIGTERM)
             if not stop.wait(10):os.killpg(process.pid,signal.SIGKILL)
     threading.Thread(target=watchdog,daemon=True).start()
-    run=None;events=[];checkpoints=[]
+    run=None;events=[];checkpoints=[];stop_reason=None;stop_status=None
     with (args.output/'training.log').open('w') as log:
         for line in process.stdout:
             elapsed=time.monotonic()-started
@@ -52,14 +55,25 @@ def main():
                 checkpoints.append(dict(update=int(match.group(1).split('-')[1]),file=dest.name,
                                         seconds=elapsed,sha256=hashlib.sha256(dest.read_bytes()).hexdigest()))
                 (args.output/'policies.json').write_text(json.dumps(checkpoints,indent=2))
+                if not stop_reason and reference and checkpoints[-1]['sha256']!=reference[checkpoints[-1]['update']]:
+                    stop_reason='checkpoint weights differ from reference at update '+str(checkpoints[-1]['update'])
+                    stop_status='stopped_checkpoint_divergence'
+                    print(json.dumps(dict(event='stopping_nonmatching_prefix',reason=stop_reason)),flush=True)
+                    # SIGINT can be deferred for an entire compiled training chunk.
+                    # The saved checkpoint is already copied before terminating.
+                    os.killpg(process.pid,signal.SIGTERM)
+                elif not stop_reason and args.stop_after_checkpoint and checkpoints[-1]['update']>=args.stop_after_checkpoint:
+                    stop_reason='requested checkpoint budget reached'
+                    stop_status='stopped_checkpoint_budget'
+                    os.killpg(process.pid,signal.SIGTERM)
     code=process.wait();stop.set()
-    result=dict(status='timeout' if timed_out.is_set() else ('complete' if code==0 else 'failed'),
+    result=dict(status=stop_status or ('timeout' if timed_out.is_set() else ('complete' if code==0 else 'failed')),
                 exit_code=code,command=command,run=str(run) if run else None,
-                wall_seconds=time.monotonic()-started,checkpoints=checkpoints)
+                wall_seconds=time.monotonic()-started,checkpoints=checkpoints,stop_reason=stop_reason)
     if run and (run/'summary.json').exists():
         result['production_summary']=json.loads((run/'summary.json').read_text())
     (args.output/'result.json').write_text(json.dumps(result,indent=2));print(json.dumps(result),flush=True)
-    if code:sys.exit(code)
+    if code and not stop_reason:sys.exit(code)
 
 
 if __name__=='__main__':main()
