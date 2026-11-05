@@ -105,6 +105,8 @@ fixed seeds and final policies on 100 separate seeds. The partial stage compares
 three paired training seeds up to 48 updates, with optional deadline-based
 skipping; it preserves the original schedules rather than compressing them to
 48 updates. The final checkpoints of partial runs can be resumed exactly.
+Use `--updates 32` on the partial stage for a shorter paired study; the original
+learning-rate and reward-shaping schedules are still preserved.
 
 The extras group also compares native CPU training, two independent GPU seeds
 vectorized together, and checkpoint/resume recovery. Two-seed batching measures

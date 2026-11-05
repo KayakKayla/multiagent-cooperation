@@ -83,12 +83,13 @@ def main():
     max_updates=config['TOTAL_TIMESTEPS']//config['NUM_ENVS']//config['NUM_STEPS']
     if args.stop_after is not None and not 1<=args.stop_after<=max_updates:
         raise ValueError('Stop point must lie within the original training budget')
-    (args.output/'config.json').write_text(json.dumps(config, indent=2))
     module = load_variant(options, args.output/'algorithm_snapshot.py')
     reference = load_algorithm('ippo_rnn')
     # All variants start from the original network/optimizer and exact RNG state.
     init, _ = reference.make_trainer(config.copy())
     _, updates = module.make_trainer(config)
+    # Save actual derived batch sizes after make_trainer updates the config.
+    (args.output/'config.json').write_text(json.dumps(config, indent=2))
     progress = (args.output/'progress.jsonl').open('w')
     def log(metrics):
         from flax.traverse_util import flatten_dict

@@ -35,6 +35,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--stage',choices=('production','partial'),required=True)
+    parser.add_argument('--updates',type=int,default=48,help='Partial-run update budget; original LR/shaping schedules are retained')
     parser.add_argument('--deadline-epoch',type=float,help='Do not start a partial run that is unlikely to finish before this time')
     args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
     from benchmarks.sweep import run_case
@@ -75,7 +76,7 @@ def main():
             name=f'{prefix}_seed{seed}'
             path=args.output/timing/'result.json'
             median=json.loads(path.read_text())['warmed_median_seconds_per_update'] if path.exists() else 6
-            estimate=48*median+60
+            estimate=args.updates*median+60
             already_complete=(args.output/name/'result.json').exists()
             if not already_complete and args.deadline_epoch and time.time()+1.25*estimate>args.deadline_epoch:
                 with (args.output/'quality-skipped.jsonl').open('a') as out:
@@ -83,7 +84,7 @@ def main():
                 print(json.dumps(dict(event='skipped',case=name,reason='time budget')),flush=True)
                 if prefix=='partial_reference':break
                 continue
-            arguments=['--options',json.dumps(options),'--command-buffer','default','--stop-after','48',
+            arguments=['--options',json.dumps(options),'--command-buffer','default','--stop-after',str(args.updates),
                        '--eval-every','16','--episodes','32','--seed',str(seed),*extra]
             run_case(args.output,name,arguments,timeout=max(300,int(estimate*1.7)))
 
