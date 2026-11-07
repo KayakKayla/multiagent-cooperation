@@ -60,7 +60,7 @@ With the full PPO dependencies installed, run from `overcooked-v2/`:
 
 ```bash
 JAX_PLATFORMS=cpu .venv/bin/python train.py --config configs/oc2_sushi_check.yaml
-JAX_PLATFORMS=cpu .venv/bin/python evaluate.py --run outputs/train/<printed-run-folder> --episodes 1
+JAX_PLATFORMS=cpu .venv/bin/python evaluate.py --run outputs/train/<printed-run-folder> --episodes 1 --no-upload
 ```
 
 The default setup installs the full CPU PPO dependencies. The standalone
@@ -298,6 +298,24 @@ Replay data checks, using the installed simulator Python environment from this d
 `python -m unittest discover -s tests -v`. These check state/action alignment, delivery
 totals, pot status, the self-contained HTML payload, and the saved scripted replay
 against its full audit when that replay is available. No training is performed.
+
+### Publish to Sims Archive
+
+Both evaluators try to publish to Sims Archive after saving the local results.
+Pass `--no-upload` (PowerShell `-NoUpload`) for a local-only run.
+To publish an existing export without running evaluation again:
+
+```bash
+python overcooked-v2/upload_evaluation.py path/to/evaluation.json
+```
+
+Open the printed approval link if a browser does not open automatically. Sign in with
+an approved GitHub account if needed, then check the terminal code and approve. The
+terminal asks for the evaluation name and notes and for names and notes for new models.
+Press Enter to accept each suggested name or leave notes blank. Exact matches and
+unambiguous archive suggestions are reused. If a match is ambiguous, use the archive's
+manual upload form to review it. Upload failures leave the local export available to retry.
+Set `SIMS_ARCHIVE_URL` to target a different archive instance.
 
 ## Cross-policy evaluation
 

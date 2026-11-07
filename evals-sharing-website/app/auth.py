@@ -9,6 +9,7 @@ from starlette._utils import get_route_path
 from .models import LoginSession, User
 
 COOKIE = "evals_session"
+CLI_UPLOAD_ROUTES = {("GET", "/api/cli/session"), ("POST", "/api/uploads"), ("POST", "/api/imports")}
 
 
 def token_hash(value):
@@ -20,11 +21,15 @@ class Sessions(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         request.state.user = None
         request.state.session = None
+        # A mounted StaticFiles app extends scope.root_path while routing.
+        route_path = get_route_path(request.scope)
         token = request.cookies.get(COOKIE)
         if token and len(token) < 256:
             with request.app.state.db() as db:
                 session = db.get(LoginSession, token_hash(token))
-                if session and session.expires_at > time.time():
+                if session and session.expires_at > time.time() and (
+                    not session.data.get("cli_upload") or (request.method, route_path) in CLI_UPLOAD_ROUTES
+                ):
                     request.state.session = session
                     request.scope["session"] = dict(session.data)
                     if session.user_id:
@@ -32,9 +37,6 @@ class Sessions(BaseHTTPMiddleware):
                         if user and user.active and user.github_id in request.app.state.settings.allowed_github_ids:
                             request.state.user = user
         request.scope.setdefault("session", {})
-        # A mounted StaticFiles app extends scope.root_path while routing, so
-        # preserve the top-level route path before downstream scope changes.
-        route_path = get_route_path(request.scope)
         response = await call_next(request)
         # Authlib changes request.session during OAuth authorization/callback.
         session = request.state.session
@@ -67,7 +69,7 @@ def set_cookie(response, token, settings):
     response.set_cookie(COOKIE, token, max_age=settings.session_seconds, secure=settings.secure_cookie, httponly=True, samesite="lax", path=settings.cookie_path)
 
 
-def require_user(request):
+def require_user(request, *, form_csrf=None):
     user = request.state.user
     if not user:
         raise HTTPException(401, "Sign in with an approved GitHub account")
@@ -76,8 +78,8 @@ def require_user(request):
         origin = request.headers.get("origin")
         if origin and origin.rstrip("/") != request.app.state.settings.origin:
             raise HTTPException(403, "Untrusted request origin")
-        csrf = request.headers.get("x-csrf-token", "")
-        if not session or not secrets.compare_digest(csrf, session.csrf_token):
+        csrf = request.headers.get("x-csrf-token", "") if form_csrf is None else form_csrf
+        if not session or not csrf.isascii() or not secrets.compare_digest(csrf, session.csrf_token):
             raise HTTPException(403, "CSRF token is missing or invalid; refresh the page")
     return user
 

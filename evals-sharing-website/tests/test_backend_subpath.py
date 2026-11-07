@@ -1,6 +1,9 @@
 """Exercise the public /sims URL through stripped-prefix proxy/server semantics."""
 import json
 from pathlib import Path
+import secrets
+import time
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from urllib.parse import urlparse, parse_qs
 import pytest
@@ -142,3 +145,48 @@ def test_subpath_oauth_callback_pkce_rotation_logout_and_origin(subsite):
 def test_invalid_site_prefixes_are_rejected(tmp_path, value):
     with pytest.raises(ValueError):
         Settings(data_dir=tmp_path, base_url=value).prepare()
+
+
+def test_terminal_login_uses_browser_approval_and_limits_access(subsite):
+    app, browser, _, _ = subsite
+    token = secrets.token_urlsafe(32)
+    challenge = token_hash(token)
+    approval = f"/sims/auth/cli?challenge={challenge}"
+    login = browser.get(approval)
+    assert login.headers["location"] == f"/sims/auth/login?cli_challenge={challenge}"
+    assert browser.get(login.headers["location"]).status_code == 302
+    github = app.state.oauth.github
+    github.authorize_access_token = AsyncMock(return_value={"access_token": "discard"})
+    identity = SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"id": 123, "login": "teammate"})
+    github.get = AsyncMock(return_value=identity)
+    callback = browser.get("/sims/auth/callback?code=fake&state=test")
+    assert callback.headers["location"] == approval
+    page = browser.get(approval)
+    assert page.status_code == 200 and challenge[:12] in page.text
+    with app.state.db() as db:
+        csrf = db.get(LoginSession, token_hash(browser.cookies.get(COOKIE))).csrf_token
+
+    with TestClient(ProxyAndServer(app), base_url="https://testserver") as terminal:
+        terminal.cookies.set(COOKIE, token, path="/sims/")
+        assert terminal.get("/sims/api/cli/session").status_code == 401
+        form = {"challenge": challenge, "csrf_token": csrf}
+        assert browser.post("/sims/auth/cli", data={"challenge": challenge}).status_code == 403
+        assert browser.post("/sims/auth/cli", data=form, headers={"origin": "https://evil.example"}).status_code == 403
+        assert browser.post("/sims/auth/cli", data=form).status_code == 200
+        session = terminal.get("/sims/api/cli/session")
+        assert session.status_code == 200 and session.json()["csrf_token"] != csrf
+        headers = {"x-csrf-token": session.json()["csrf_token"], "content-type": "application/json"}
+        raw = (Path(__file__).parent / "fixtures" / "evaluation-v1.json").read_bytes()
+        preview = terminal.post("/sims/api/uploads", content=raw, headers=headers)
+        assert preview.status_code == 200, preview.text
+        result = terminal.post("/sims/api/imports", json={"preview_id": preview.json()["id"]}, headers=headers)
+        assert result.status_code == 200, result.text
+        assert terminal.delete(f"/sims/api/evaluations/{result.json()['id']}", headers=headers).status_code == 401
+        assert terminal.get("/sims/upload").status_code == 401
+        with app.state.db() as db:
+            session = db.get(LoginSession, challenge)
+            assert time.time() < session.expires_at <= time.time() + 1800
+            session.expires_at = int(time.time()) - 1
+            db.commit()
+        assert terminal.get("/sims/api/cli/session").status_code == 401
+    assert browser.get("/sims/upload").status_code == 200

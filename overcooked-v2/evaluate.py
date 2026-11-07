@@ -14,6 +14,7 @@ from flax import serialization
 from preview import save_preview
 from train import DEFAULT_CONFIG, SCRIPT_DIR, load_baseline
 from scenarios import make_env
+from upload_evaluation import upload_evaluation
 
 
 from evaluation_core import (initialize_policy, check_run_revision, check_partner_config,
@@ -40,6 +41,7 @@ def main():
     )
     parser.add_argument("--seed", type=int, help="Policy initialization seed (untrained only).")
     parser.add_argument("--episodes", type=int, default=5)
+    parser.add_argument("--no-upload", action="store_true", help="Keep the evaluation local.")
     parser.add_argument(
         "--eval-seed", type=int, default=1000,
         help="First test seed; independent of training.",
@@ -176,6 +178,8 @@ def main():
     print(json.dumps(summary, indent=2), flush=True)
     print(f"Replay (open in a browser): {output / 'replay.html'}", flush=True)
     print(f"GIF: {output / 'rollout.gif'}", flush=True)
+    if not args.no_upload:
+        upload_evaluation(output / "evaluation.json")
 
 
 if __name__ == "__main__":

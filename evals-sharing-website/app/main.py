@@ -1,7 +1,10 @@
 from pathlib import Path
 import json
 import hashlib
+import re
+import secrets
 import time
+from urllib.parse import parse_qs
 import httpx
 from authlib.integrations.starlette_client import OAuth
 from authlib.integrations.base_client.errors import OAuthError
@@ -265,15 +268,17 @@ def create_app(settings=None):
         return await delete_record(request, Policy, id)
 
     @app.get("/auth/login")
-    async def login(request: Request):
+    async def login(request: Request, cli_challenge: str = ""):
         app.state.throttle.check(("login", request.client.host), 10)
+        if cli_challenge and not re.fullmatch(r"[a-f0-9]{64}", cli_challenge):
+            raise HTTPException(422, "Invalid terminal login challenge")
         if not settings.github_client_id or not settings.github_client_secret:
             raise HTTPException(503, "GitHub sign-in is not configured on this local instance")
         with app.state.db() as db:
             cleanup(db)
             token, session = new_session(db, settings)
         request.state.session = session
-        request.scope["session"] = {}
+        request.scope["session"] = {"cli_challenge": cli_challenge} if cli_challenge else {}
         response = await oauth.github.authorize_redirect(request, settings.base_url + "/auth/callback")
         set_cookie(response, token, settings)
         return response
@@ -283,6 +288,7 @@ def create_app(settings=None):
         app.state.throttle.check(("callback", request.client.host), 20)
         if not request.state.session:
             raise HTTPException(400, "Login session expired or missing; sign in again")
+        cli_challenge = request.session.get("cli_challenge")
         try:
             token = await oauth.github.authorize_access_token(request)
             response = await oauth.github.get("user", token=token)
@@ -313,9 +319,49 @@ def create_app(settings=None):
             db.execute(delete(LoginSession).where(LoginSession.token_hash == request.state.session.token_hash))
             token, session = new_session(db, settings, user.id)
         request.state.session = session
-        response = RedirectResponse(settings.app_path("/"), status_code=303)
+        destination = f"/auth/cli?challenge={cli_challenge}" if cli_challenge else "/"
+        response = RedirectResponse(settings.app_path(destination), status_code=303)
         set_cookie(response, token, settings)
         return response
+
+    @app.get("/auth/cli")
+    def cli_approval(request: Request, challenge: str):
+        if not re.fullmatch(r"[a-f0-9]{64}", challenge):
+            raise HTTPException(422, "Invalid terminal login challenge")
+        if not request.state.user:
+            return RedirectResponse(settings.app_path(f"/auth/login?cli_challenge={challenge}"))
+        return render(request, "cli_approval.html", {"challenge": challenge})
+
+    @app.post("/auth/cli")
+    async def approve_cli(request: Request):
+        try:
+            form = parse_qs((await bounded_body(request, 4096)).decode(), max_num_fields=2)
+        except ValueError:
+            raise HTTPException(422, "Invalid terminal login form")
+        user = require_user(request, form_csrf=form.get("csrf_token", [""])[0])
+        challenge = form.get("challenge", [""])[0]
+        if not re.fullmatch(r"[a-f0-9]{64}", challenge):
+            raise HTTPException(422, "Invalid terminal login challenge")
+        app.state.throttle.check(("cli_approval", user.id), 10)
+        with app.state.db() as db:
+            db.execute(text("BEGIN IMMEDIATE"))
+            existing = db.get(LoginSession, challenge)
+            if existing is None:
+                db.add(LoginSession(token_hash=challenge, user_id=user.id,
+                                    csrf_token=secrets.token_urlsafe(32), data={"cli_upload": True},
+                                    expires_at=min(request.state.session.expires_at, int(time.time()) + 1800)))
+                db.commit()
+            elif not existing.data.get("cli_upload") or existing.user_id != user.id or existing.expires_at <= time.time():
+                raise HTTPException(409, "This terminal authorization is unavailable; restart the upload")
+        return render(request, "cli_approval.html", {"approved": True})
+
+    @app.get("/api/cli/session")
+    def cli_session(request: Request):
+        require_user(request)
+        session = request.state.session
+        if not session.data.get("cli_upload"):
+            raise HTTPException(401, "Terminal upload authorization required")
+        return {"csrf_token": session.csrf_token}
 
     @app.post("/auth/logout")
     def logout(request: Request):
