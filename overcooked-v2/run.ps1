@@ -6,6 +6,7 @@ param(
     [int]$Seed = 42,
     [switch]$DryRun,
     [switch]$Untrained,
+    [switch]$NoUpload,
     [string]$Run = '',
     [string]$PartnerRun = '',
     [int]$Episodes = 5,
@@ -25,8 +26,8 @@ if ($WslDistribution) {
 }
 $runArguments = @('./run.sh', $Mode)
 
-if ($Mode -ne 'evaluate' -and ($Untrained -or $Run -or $PartnerRun -or $PSBoundParameters.ContainsKey('Episodes') -or $PSBoundParameters.ContainsKey('EvalSeed'))) {
-    throw '-Untrained, -Run, -PartnerRun, -Episodes and -EvalSeed are for evaluate mode.'
+if ($Mode -ne 'evaluate' -and ($Untrained -or $NoUpload -or $Run -or $PartnerRun -or $PSBoundParameters.ContainsKey('Episodes') -or $PSBoundParameters.ContainsKey('EvalSeed'))) {
+    throw '-Untrained, -NoUpload, -Run, -PartnerRun, -Episodes and -EvalSeed are for evaluate mode.'
 }
 
 if ($Mode -eq 'train') {
@@ -74,6 +75,9 @@ if ($Mode -eq 'train') {
         }
     }
     $runArguments += @('--episodes', "$Episodes", '--eval-seed', "$EvalSeed")
+    if ($NoUpload) {
+        $runArguments += '--no-upload'
+    }
 } else {
     if ($DryRun) {
         throw '-DryRun is available with train mode.'

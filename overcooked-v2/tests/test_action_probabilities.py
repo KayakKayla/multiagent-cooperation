@@ -102,12 +102,14 @@ class ActionProbabilityTests(unittest.TestCase):
                 patch.object(evaluate, "make_env", return_value=self.env),
                 patch.object(evaluate, "initialize_policy", return_value=(self.network, self.a)),
                 patch.object(evaluate, "save_preview") as save_preview,
+                patch.object(evaluate, "upload_evaluation") as upload,
                 patch.object(sys, "argv", ["evaluate.py", "--untrained", "--episodes", "2"]),
                 redirect_stdout(StringIO()),
             ):
                 evaluate.main()
 
             output, = (root / "outputs/evaluate").iterdir()
+            upload.assert_called_once_with(output / "evaluation.json")
             self.assertEqual(len(list(output.glob("decisions-*.npz"))), 2)
             exported = parse_document((output / "evaluation.json").read_bytes())
             self.assertEqual(len(exported["episodes"]), 2)

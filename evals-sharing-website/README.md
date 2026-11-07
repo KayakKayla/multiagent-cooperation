@@ -90,6 +90,12 @@ token is discarded after identity lookup. Successful sign-in rotates the cookie.
 Every mutation rechecks the ID allowlist and active account, validates its CSRF
 header and supplied Origin, and uses local session expiry/revocation.
 
+The [terminal uploader](../overcooked-v2/README.md#publish-to-sims-archive) uses
+the same GitHub browser sign-in. After the teammate approves a matching terminal
+code, the archive authorizes the terminal for uploads and imports for up to 30
+minutes. Terminal credentials are kept in memory. This requires the updated
+website code with the existing OAuth settings and database schema.
+
 ## Data and API
 
 See [architecture](docs/architecture.md), [the format](docs/format-and-export.md), and

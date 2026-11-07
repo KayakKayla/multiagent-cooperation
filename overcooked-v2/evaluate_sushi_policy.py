@@ -25,6 +25,7 @@ from scenarios import make_env
 from scenarios.oc2_sushi_1_3.environment import Action, Item, QUEUED, RECIPE
 from scenarios.oc2_sushi_1_3.layout import Tile
 from train import ALGORITHMS, SCRIPT_DIR, load_baseline
+from upload_evaluation import upload_evaluation
 
 
 from evaluation_core import (make_episode as _make_episode, validate_perturbations,
@@ -227,6 +228,7 @@ def main():
     parser.add_argument("--action-selection", choices=("sampled", "greedy"), default="sampled")
     parser.add_argument("--steps", type=int, default=600)
     parser.add_argument("--no-replay", action="store_true")
+    parser.add_argument("--no-upload", action="store_true", help="Keep the evaluation local.")
     parser.add_argument("--action-dropout", type=float, default=0.,
                         help="Independent probability of replacing each chef action with STAY.")
     parser.add_argument("--random-action-prob", type=float, default=0.,
@@ -236,10 +238,14 @@ def main():
     parser.add_argument("--random-facing", action="store_true",
                         help="Independently randomize initial facing directions.")
     args = parser.parse_args()
-    evaluate_run(args.run, args.output, args.episodes, args.eval_seed,
-                 args.action_selection, args.steps, not args.no_replay,
-                 action_dropout=args.action_dropout, random_action_prob=args.random_action_prob,
-                 spawn_jitter=args.spawn_jitter, random_facing=args.random_facing)
+    output, _ = evaluate_run(
+        args.run, args.output, args.episodes, args.eval_seed,
+        args.action_selection, args.steps, not args.no_replay,
+        action_dropout=args.action_dropout, random_action_prob=args.random_action_prob,
+        spawn_jitter=args.spawn_jitter, random_facing=args.random_facing,
+    )
+    if not args.no_upload:
+        upload_evaluation(output / "evaluation.json")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Authorize terminal upload · SIMS{% endblock %}
+{% block content %}
+{% if approved %}
+<h1>Terminal upload authorized</h1>
+<p>Return to your terminal to finish publishing the evaluation.</p>
+{% else %}
+<h1>Authorize terminal upload</h1>
+<p>Only approve if you started an upload and your terminal shows the code <strong>{{ challenge[:12] }}</strong>.</p>
+<form action="{{ root_path }}/auth/cli" method="post">
+  <input type="hidden" name="challenge" value="{{ challenge }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit">Authorize uploads as {{ user.login }}</button>
+</form>
+{% endif %}
+{% endblock %}
